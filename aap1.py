@@ -1,18 +1,26 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 
 # Set page config
-st.set_page_config(page_title="Hotel KPI Dashboard - Econo Lodge Metro", layout="wide")
+st.set_page_config(page_title="Econo Lodge Metro - KPI Dashboard", layout="wide")
 
 # Constants
 TOTAL_ROOMS = 47
-ESTIMATED_GOP_MARGIN = 0.40  # 40% margin for economy hotels
+ESTIMATED_GOP_MARGIN = 0.40
+# Setting current date context for April 2026
+CURRENT_DATE_2026 = datetime(2026, 4, 11) 
+
+def clean_numeric(series):
+    """Helper to force conversion of strings with commas/symbols to numbers."""
+    if series.dtype == 'object':
+        # Convert to string, remove commas, percent signs, and spaces
+        series = series.astype(str).str.replace(r'[$,%]', '', regex=True).str.strip()
+    return pd.to_numeric(series, errors='coerce').fillna(0)
 
 @st.cache_data
-def load_data():
+def load_and_clean_data():
     files = {
         '2023': 'APRIL 2023.csv',
         '2024': 'APRIL 2024.csv',
@@ -22,100 +30,111 @@ def load_data():
     
     all_data = []
     for year, file in files.items():
-        df = pd.read_csv(file)
-        # Handle potential BOM in column names
-        df.columns = [c.replace('\ufeff', '') for c in df.columns]
-        
-        # Data Cleaning
-        df['Date'] = pd.to_datetime(df['IDS_DATE'])
-        df['RoomRev'] = df['RoomRev'].str.replace(',', '').astype(float)
-        df['OccPercent'] = df['OccPercent'].str.replace('%', '').astype(float)
-        
-        # Calculate Estimated GOP and GOPPAR
-        df['Est_GOP'] = df['RoomRev'] * ESTIMATED_GOP_MARGIN
-        df['GOPPAR'] = df['Est_GOP'] / df['Rooms']
-        
-        df['Year'] = year
-        all_data.append(df)
+        try:
+            # Load file
+            df = pd.read_csv(file)
+            
+            # 1. Clean Column Names (Remove BOM, spaces, and hidden characters)
+            df.columns = [c.replace('\ufeff', '').strip() for c in df.columns]
+            
+            # 2. Convert Date
+            df['Date'] = pd.to_datetime(df['IDS_DATE'], errors='coerce')
+            df = df.dropna(subset=['Date']) # Remove any empty rows
+            
+            # 3. Robustly convert all KPI columns to float
+            df['RoomRev'] = clean_numeric(df['RoomRev'])
+            df['OccPercent'] = clean_numeric(df['OccPercent'])
+            df['ADR'] = clean_numeric(df['ADR'])
+            df['RevPAR'] = clean_numeric(df['RevPAR'])
+            df['Occupied'] = clean_numeric(df['Occupied'])
+            
+            # 4. Handle GOP calculations
+            df['Est_GOP'] = df['RoomRev'] * ESTIMATED_GOP_MARGIN
+            df['GOPPAR'] = df['Est_GOP'] / TOTAL_ROOMS
+            
+            df['Year'] = year
+            all_data.append(df)
+            
+        except Exception as e:
+            st.error(f"Error reading {file}: {e}")
+            
+    if not all_data:
+        return pd.DataFrame()
         
     return pd.concat(all_data)
 
-# Load data
-try:
-    df_full = load_data()
-    df_full['Day_of_Month'] = df_full['Date'].dt.day
-except Exception as e:
-    st.error(f"Error loading data: {e}. Ensure CSV files are in the same directory.")
+# App execution
+df_full = load_and_clean_data()
+
+if df_full.empty:
+    st.error("Could not load any data. Please check your CSV file formats.")
     st.stop()
 
-# Sidebar
-st.sidebar.header("Dashboard Filters")
-selected_years = st.sidebar.multiselect("Select Years to Compare", ['2023', '2024', '2025', '2026'], default=['2024', '2025', '2026'])
-gop_margin = st.sidebar.slider("Adjust Estimated GOP Margin (%)", 20, 60, 40) / 100
+df_full['Day_of_Month'] = df_full['Date'].dt.day
 
-# Update GOPPAR based on slider
-df_full['Est_GOP'] = df_full['RoomRev'] * gop_margin
-df_full['GOPPAR'] = df_full['Est_GOP'] / df_full['Rooms']
+# Sidebar
+st.sidebar.header("Dashboard Controls")
+selected_years = st.sidebar.multiselect("Select Years", ['2023', '2024', '2025', '2026'], default=['2024', '2025', '2026'])
+gop_slider = st.sidebar.slider("Est. GOP Margin (%)", 20, 60, 40) / 100
+
+# Recalculate based on slider
+df_full['Est_GOP'] = df_full['RoomRev'] * gop_slider
+df_full['GOPPAR'] = df_full['Est_GOP'] / TOTAL_ROOMS
 
 # Title
-st.title("🏨 Econo Lodge Metro - April KPI Performance")
-st.markdown(f"**Location:** Arlington, VA | **Analysis Period:** April 2023 - 2026")
-if '2026' in selected_years:
-    st.info("Note: April 2026 is currently in progress. Data after April 11 represents future bookings.")
+st.title(" Econo Lodge Metro (Arlington, VA)")
+st.subheader("April Year-Over-Year KPI Analysis")
 
-# Main KPIs
-cols = st.columns(4)
+# Metric Row
 latest_year = '2026' if '2026' in selected_years else max(selected_years)
 current_df = df_full[df_full['Year'] == latest_year]
 
-with cols[0]:
-    st.metric("Avg Occ %", f"{current_df['OccPercent'].mean():.1f}%")
-with cols[1]:
-    st.metric("Avg ADR", f"${current_df['ADR'].mean():.2L}")
-with cols[2]:
-    st.metric("Avg RevPAR", f"${current_df['RevPAR'].mean():.2L}")
-with cols[3]:
-    st.metric("Avg GOPPAR (Est.)", f"${current_df['GOPPAR'].mean():.2L}")
+# For 2026, only show metrics based on actuals (up to April 11)
+if latest_year == '2026':
+    display_df = current_df[current_df['Date'] <= CURRENT_DATE_2026]
+    st.info(f"💡 Metrics for 2026 are based on actuals through {CURRENT_DATE_2026.strftime('%b %d')}.")
+else:
+    display_df = current_df
 
-# Trend Analysis
-st.subheader("Daily KPI Trends")
-metric_choice = st.selectbox("Select Metric", ["RevPAR", "ADR", "OccPercent", "GOPPAR"])
+cols = st.columns(4)
+with cols[0]:
+    st.metric("Avg Occ %", f"{display_df['OccPercent'].mean():.1f}%")
+with cols[1]:
+    st.metric("Avg ADR", f"${display_df['ADR'].mean():.2f}")
+with cols[2]:
+    st.metric("Avg RevPAR", f"${display_df['RevPAR'].mean():.2f}")
+with cols[3]:
+    st.metric("Avg GOPPAR (Est.)", f"${display_df['GOPPAR'].mean():.2f}")
+
+# Trend Graph
+st.divider()
+metric_to_plot = st.selectbox("Select Trend Metric", ["RevPAR", "GOPPAR", "ADR", "OccPercent"])
 
 filtered_df = df_full[df_full['Year'].isin(selected_years)]
-fig_trend = px.line(filtered_df, x='Day_of_Month', y=metric_choice, color='Year',
-              title=f"April {metric_choice} Trends",
-              labels={'Day_of_Month': 'Day of April', metric_choice: metric_choice},
-              template="plotly_white")
-st.plotly_chart(fig_trend, use_container_width=True)
+fig = px.line(filtered_df, x='Day_of_Month', y=metric_to_plot, color='Year',
+              title=f"April {metric_to_plot} Daily Trends",
+              labels={'Day_of_Month': 'Day of the Month'},
+              template="plotly_dark")
 
-# GOPPAR vs RevPAR Analysis
-st.subheader("GOPPAR vs RevPAR Correlation")
-col_a, col_b = st.columns(2)
+# Visual marker for 2026 status
+if '2026' in selected_years:
+    fig.add_vline(x=CURRENT_DATE_2026.day, line_dash="dash", line_color="orange", 
+                 annotation_text="Today (April 11)")
 
-with col_a:
-    fig_scatter = px.scatter(filtered_df, x='RevPAR', y='GOPPAR', color='Year', 
-                             title="Efficiency: RevPAR vs GOPPAR",
-                             trendline="ols")
-    st.plotly_chart(fig_scatter, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
 
-with col_b:
-    summary = filtered_df.groupby('Year').agg({
-        'RoomRev': 'sum',
-        'Est_GOP': 'sum',
-        'RevPAR': 'mean',
-        'GOPPAR': 'mean'
-    }).reset_index()
-    st.write("### Monthly Totals")
-    st.dataframe(summary.style.format({
-        'RoomRev': '${:,.2f}',
-        'Est_GOP': '${:,.2f}',
-        'RevPAR': '${:.2f}',
-        'GOPPAR': '${:.2f}'
-    }))
+# Comparison Table
+st.subheader("Monthly Financial Performance Summary")
+summary = filtered_df.groupby('Year').agg({
+    'RoomRev': 'sum',
+    'Est_GOP': 'sum',
+    'RevPAR': 'mean',
+    'GOPPAR': 'mean'
+}).reset_index()
 
-# Business Insight
-st.subheader("Key Observations")
-st.write("""
-- **GOPPAR Sensitivity:** At a 40% margin, your GOPPAR tracks closely with RevPAR. Maintaining high ADR is critical for GOPPAR because variable costs (housekeeping/laundry) are higher when occupancy is the primary driver of revenue.
-- **April 2026 Progress:** You can see a sharp drop-off in the trend charts after the current date; this is your window to push last-minute sales or adjust rates to fill the remaining nights.
-""")
+st.table(summary.style.format({
+    'RoomRev': '${:,.2f}',
+    'Est_GOP': '${:,.2f}',
+    'RevPAR': '${:.2f}',
+    'GOPPAR': '${:.2f}'
+}))
