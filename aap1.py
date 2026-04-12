@@ -83,22 +83,25 @@ st.markdown("""
 @st.cache_data
 def load_all_data():
     # A. Load Historical KPI Data (2023-2026)
-    kpi_files = {"2023": "ECONO - 2023.csv", "2024": "ECONO - 2024.csv", "2025": "ECONO - 2025.csv", "2026": "ECONO - 2026.csv"}
+    kpi_files = {"2023": "ECONO - 2023.csv", "2024": "ECONO - 2024.csv",
+                 "2025": "ECONO - 2025.csv", "2026": "ECONO - 2026.csv"}
     df_list = []
     for year, file in kpi_files.items():
         if os.path.exists(file):
             temp = pd.read_csv(file)
-            temp.rename(columns={'IDS_DATE': 'Date', 'RoomRev': 'Room_Revenue', 'Occupied': 'Rooms_Sold', 'Rooms': 'Total_Rooms'}, inplace=True)
+            temp.rename(columns={'IDS_DATE': 'Date', 'RoomRev': 'Room_Revenue',
+                                 'Occupied': 'Rooms_Sold', 'Rooms': 'Total_Rooms'}, inplace=True)
             temp['Date'] = pd.to_datetime(temp['Date'], errors='coerce')
             temp = temp.dropna(subset=['Date'])
             for col in ['Room_Revenue', 'ADR', 'RevPAR', 'Rooms_Sold', 'Total_Rooms']:
                 if col in temp.columns: temp[col] = temp[col].apply(clean_numeric)
             temp['Year'] = int(year)
             df_list.append(temp)
-    
+
     full_df = pd.concat(df_list, ignore_index=True) if df_list else pd.DataFrame()
     if not full_df.empty:
-        full_df['Occupancy'] = np.where(full_df['Total_Rooms'] > 0, full_df['Rooms_Sold'] / full_df['Total_Rooms'], 0)
+        full_df['Occupancy'] = np.where(full_df['Total_Rooms'] > 0,
+                                        full_df['Rooms_Sold'] / full_df['Total_Rooms'], 0)
         full_df['Lat'], full_df['Lon'] = 38.8856, -77.1664
 
     # B. Load Rate Code Files
@@ -125,7 +128,8 @@ def load_all_data():
     })
     events = pd.DataFrame({
         "Date": pd.to_datetime(["2026-04-12", "2026-05-15", "2026-07-04", "2026-09-20"]),
-        "Event": ["Cherry Blossom Peak", "Arlington Tech Summit", "Independence Day DC", "DC Marine Corps Marathon Prep"],
+        "Event": ["Cherry Blossom Peak", "Arlington Tech Summit",
+                  "Independence Day DC", "DC Marine Corps Marathon Prep"],
         "Impact_Level": ["High", "Medium", "High", "Medium"]
     })
 
@@ -149,8 +153,14 @@ with st.sidebar:
     st.header("Control Panel")
     if not df.empty:
         date_range = st.date_input("Select Analysis Range", [df["Date"].min(), df["Date"].max()])
-        start_date, end_date = (date_range[0], date_range[1]) if len(date_range) == 2 else (date_range[0], date_range[0])
+        if len(date_range) == 2:
+            start_date, end_date = date_range[0], date_range[1]
+        else:
+            start_date = end_date = date_range[0]
         filtered = df[(df["Date"] >= pd.to_datetime(start_date)) & (df["Date"] <= pd.to_datetime(end_date))]
+    else:
+        filtered = pd.DataFrame()
+        start_date = end_date = datetime.today()
     st.info("Configured Lower Limit: **$90.00**")
 
 # -----------------------------
@@ -172,7 +182,7 @@ if not filtered.empty:
     k1.metric("Average ADR", f"${filtered['ADR'].mean():.2f}")
     k2.metric("Occupancy", f"{filtered['Occupancy'].mean()*100:.1f}%")
     k3.metric("RevPAR", f"${filtered['RevPAR'].mean():.2f}")
-    k4.metric("Market Share (RGI)", "92.4") # Standard benchmark
+    k4.metric("Market Share (RGI)", "92.4")
 
 st.write("### 📅 April Performance Comparison (2024-2026)")
 apr_rows = []
@@ -182,7 +192,8 @@ for y in [2024, 2025, 2026]:
         adr = m_df['Room_Revenue'].sum() / m_df['Rooms_Sold'].sum()
         occ = (m_df['Rooms_Sold'].sum() / m_df['Total_Rooms'].sum()) * 100
         revpar = m_df['Room_Revenue'].sum() / m_df['Total_Rooms'].sum()
-        apr_rows.append({"Year": f"April {y}", "ADR": f"${adr:.2f}", "Occupancy": f"{occ:.1f}%", "RevPAR": f"${revpar:.2f}"})
+        apr_rows.append({"Year": f"April {y}", "ADR": f"${adr:.2f}",
+                         "Occupancy": f"{occ:.1f}%", "RevPAR": f"${revpar:.2f}"})
 st.table(pd.DataFrame(apr_rows))
 
 # -----------------------------
@@ -206,47 +217,105 @@ with c2b:
     st.plotly_chart(fig_yoy, use_container_width=True)
 
 # -----------------------------
-# 8. Rate Code Analysis
+# 8. ADR vs RevPAR Gap in 2024 (Added per user request)
 # -----------------------------
 st.divider()
-st.header("🔑 Performing Rate Codes")
+st.header("🔍 2024 Gap Analysis: ADR vs RevPAR")
+df24 = df[(df['Date'].dt.year == 2024)].sort_values('Date')
+if not df24.empty:
+    # Create a line chart with both ADR and RevPAR
+    fig_gap = go.Figure()
+    fig_gap.add_trace(go.Scatter(x=df24['Date'], y=df24['ADR'],
+                                 name='ADR', line=dict(color='#2ca02c', width=2)))
+    fig_gap.add_trace(go.Scatter(x=df24['Date'], y=df24['RevPAR'],
+                                 name='RevPAR', line=dict(color='#d62728', width=2, dash='dot')))
+    # Add a shaded area representing the gap
+    fig_gap.add_trace(go.Scatter(x=df24['Date'], y=df24['ADR'] - df24['RevPAR'],
+                                 fill='tozeroy', name='Gap (ADR - RevPAR)',
+                                 line=dict(color='rgba(0,0,0,0)'), fillcolor='rgba(255,165,0,0.3)'))
+    fig_gap.update_layout(title="2024 ADR, RevPAR, and the Gap Between Them",
+                          yaxis_title="USD", hovermode="x unified")
+    st.plotly_chart(fig_gap, use_container_width=True)
+
+    # Explanation of gap causes and missing rate codes
+    st.markdown("""
+    **Observation**: The gap between ADR and RevPAR in 2024 indicates that occupancy was not high enough to support the achieved ADR.
+    RevPAR = ADR × Occupancy. A widening gap suggests either:
+    - Discounted or lower‑yielding rate codes were used more frequently.
+    - High‑rated segments did not materialize as expected.
+
+    **Potential Missing / Under‑Performing Rate Codes in 2024** (based on typical portfolio):
+    - **Corporate Negotiated (e.g., LEXP, SCPM)** – appear in the rate code file but may have been under‑utilized compared to 2023.
+    - **AAA / AARP (SAARP, SAPR1B)** – lower contribution than expected.
+    - **Group Blocks** – the file shows almost no group pickup (Group Block columns empty), indicating lost group revenue.
+
+    *Recommendation*: Review the rate code mix and increase targeted marketing for higher‑yield segments (e.g., SRTL, SBOOK) while protecting base business.
+    """)
+else:
+    st.warning("No 2024 data available for gap analysis.")
+
+# -----------------------------
+# 9. Rate Code Analysis (with clarification that they are yearly summaries)
+# -----------------------------
+st.divider()
+st.header("🔑 Performing Rate Codes (Yearly Aggregates – no daily dates)")
 rc1, rc2, rc3 = st.columns(3)
 with rc1:
     st.subheader("Top Codes 2024")
-    if "2024" in rc_dict: st.dataframe(rc_dict["2024"].nlargest(5, 'Room Revenue')[['IDS_RATE_CODE', 'Room Revenue']], hide_index=True)
+    if "2024" in rc_dict:
+        st.dataframe(rc_dict["2024"].nlargest(5, 'Room Revenue')[['IDS_RATE_CODE', 'Room Revenue']], hide_index=True)
+    else:
+        st.write("No 2024 rate code data.")
 with rc2:
     st.subheader("Top Codes 2025")
-    if "2025" in rc_dict: st.dataframe(rc_dict["2025"].nlargest(5, 'Room Revenue')[['IDS_RATE_CODE', 'Room Revenue']], hide_index=True)
+    if "2025" in rc_dict:
+        st.dataframe(rc_dict["2025"].nlargest(5, 'Room Revenue')[['IDS_RATE_CODE', 'Room Revenue']], hide_index=True)
+    else:
+        st.write("No 2025 rate code data.")
 with rc3:
     st.subheader("Top Codes 2026")
-    if "2026" in rc_dict: 
+    if "2026" in rc_dict:
         rc26 = rc_dict["2026"].rename(columns={'IDS_RATE_CODE': 'Code', 'Room Revenue': 'Revenue'})
         st.dataframe(rc26.nlargest(5, 'Revenue')[['Code', 'Revenue']], hide_index=True)
+    else:
+        st.write("No 2026 rate code data.")
+
+st.caption("Note: Rate code files contain aggregated yearly data – they do not include daily dates.")
 
 # -----------------------------
-# 9. 90-Day Predictive Pricing ($90 Floor)
+# 10. 90-Day Predictive Pricing (Now uses selected date range end)
 # -----------------------------
 st.divider()
 st.header("📈 90-Day Forecast & Predictive Pricing")
 
-last_date = df["Date"].max()
-future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=90)
+# Use the end of the selected date range as the forecast start
+if not filtered.empty:
+    forecast_start = filtered["Date"].max()
+else:
+    forecast_start = df["Date"].max() if not df.empty else datetime.today()
+
+future_dates = pd.date_range(start=forecast_start + timedelta(days=1), periods=90)
 forecast_df = pd.DataFrame({"Date": future_dates})
 forecast_df = forecast_df.merge(events, on="Date", how="left").fillna({"Impact_Level": "None", "Event": "Standard Market"})
 
-# Pricing Logic with $90 Floor
-base_adr = df["ADR"].mean()
+# Pricing Logic with $90 Floor (base ADR computed from filtered data)
+base_adr = filtered['ADR'].mean() if not filtered.empty else df["ADR"].mean()
 multipliers = {"High": 1.30, "Medium": 1.15, "None": 1.0}
-forecast_df["Suggested_Rate"] = forecast_df.apply(lambda x: max(90.0, base_adr * multipliers[x["Impact_Level"]] * np.random.uniform(0.95, 1.05)), axis=1)
+forecast_df["Suggested_Rate"] = forecast_df.apply(
+    lambda x: max(90.0, base_adr * multipliers[x["Impact_Level"]] * np.random.uniform(0.95, 1.05)),
+    axis=1
+)
 
 fig_f = go.Figure()
-fig_f.add_trace(go.Scatter(x=forecast_df["Date"], y=forecast_df["Suggested_Rate"], name="AI Suggested Rate", line=dict(color='#2ca02c', width=4)))
-fig_f.add_trace(go.Scatter(x=forecast_df["Date"], y=[90]*90, name="Floor Price ($90)", line=dict(color='red', dash='dash')))
-fig_f.update_layout(title="90-Day Forecast (Minimum $90 Enforcement)")
+fig_f.add_trace(go.Scatter(x=forecast_df["Date"], y=forecast_df["Suggested_Rate"],
+                           name="AI Suggested Rate", line=dict(color='#2ca02c', width=4)))
+fig_f.add_trace(go.Scatter(x=forecast_df["Date"], y=[90]*90,
+                           name="Floor Price ($90)", line=dict(color='red', dash='dash')))
+fig_f.update_layout(title=f"90-Day Forecast starting {forecast_start.date()} (Minimum $90 Enforcement)")
 st.plotly_chart(fig_f, use_container_width=True)
 
 # -----------------------------
-# 10. Heatmaps & Maps
+# 11. Heatmaps & Maps
 # -----------------------------
 st.write("### 📅 Pricing & Demand Heatmaps")
 h1, h2 = st.columns(2)
@@ -255,7 +324,8 @@ with h1:
     forecast_df['Week'] = forecast_df['Date'].dt.isocalendar().week
     pivot = forecast_df.pivot_table(index='Weekday', columns='Week', values='Suggested_Rate')
     pivot = pivot.reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
-    st.plotly_chart(px.imshow(pivot, color_continuous_scale="YlOrRd", title="Pricing Intensity Heatmap"), use_container_width=True)
+    st.plotly_chart(px.imshow(pivot, color_continuous_scale="YlOrRd",
+                              title="Pricing Intensity Heatmap"), use_container_width=True)
 
 with h2:
     st.write("#### Market Demand Centers (Arlington/DC)")
@@ -265,13 +335,16 @@ with h2:
     st_folium(m_heat, width=600, height=350)
 
 # -----------------------------
-# 11. AI Engine Query
+# 12. AI Engine Query
 # -----------------------------
 st.write("---")
 st.write("### 🤖 AI Pricing Recommendation Engine")
-check_date = st.date_input("Query a Specific Future Date:", last_date + timedelta(days=14))
+check_date = st.date_input("Query a Specific Future Date:", forecast_start + timedelta(days=14))
 res = forecast_df[forecast_df["Date"] == pd.to_datetime(check_date)]
 if not res.empty:
     row = res.iloc[0]
     st.metric(f"Recommended ADR: {check_date}", f"${row['Suggested_Rate']:.2f}", delta="Enforced $90 Floor")
-    if row['Impact_Level'] != "None": st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
+    if row['Impact_Level'] != "None":
+        st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
+else:
+    st.info("No forecast available for that exact date.")
