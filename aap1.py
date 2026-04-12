@@ -82,7 +82,7 @@ if df_all.empty:
     st.error("No data files found. Ensure 'APRIL 2023.csv' through 'APRIL 2026.csv' are in the directory.")
     st.stop()
 
-st.title(f"🏨 Econo Lodge Metro – {ZIP_CODE} Performance")
+st.title(f" Econo Lodge Metro – {ZIP_CODE} Performance")
 st.sidebar.header("Dashboard Filters")
 
 available_years = sorted(df_all['Year'].unique())
