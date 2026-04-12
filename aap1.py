@@ -21,33 +21,29 @@ def load_all_data():
     for year in years:
         file_path = Path(f"APRIL {year}.csv")
         if file_path.exists():
-            # Read with utf-8-sig to remove BOM automatically
             df = pd.read_csv(file_path, encoding='utf-8-sig')
             
-            # Clean column names: remove quotes, extra spaces, and BOM remnants
+            # Clean column names
             df.columns = (
                 df.columns
                 .str.strip()
                 .str.replace('"', '', regex=False)
                 .str.replace(' ', '', regex=False)
-                .str.replace('﻿', '', regex=False)  # Remove BOM character if still present
+                .str.replace('﻿', '', regex=False)
             )
             
-            # If 'IDS_DATE' is still missing, try to find case-insensitive match
             if 'IDS_DATE' not in df.columns:
                 for col in df.columns:
                     if col.upper() == 'IDS_DATE':
                         df.rename(columns={col: 'IDS_DATE'}, inplace=True)
                         break
             
-            # Convert date column
             if 'IDS_DATE' in df.columns:
                 df['IDS_DATE'] = pd.to_datetime(df['IDS_DATE'], errors='coerce')
             else:
                 st.error(f"Column 'IDS_DATE' not found in file {file_path}. Available columns: {list(df.columns)}")
                 continue
             
-            # Convert percentage strings to float (remove % and any whitespace)
             if 'OccPercent' in df.columns:
                 df['OccPercent'] = (
                     df['OccPercent']
@@ -57,11 +53,9 @@ def load_all_data():
                 )
                 df['OccPercent'] = pd.to_numeric(df['OccPercent'], errors='coerce')
             
-            # Ensure numeric columns are float
             numeric_cols = ['RoomRev', 'RevPAR', 'ADR', 'Occupied', 'Available', 'Rooms']
             for col in numeric_cols:
                 if col in df.columns:
-                    # Remove commas if any and convert
                     df[col] = df[col].astype(str).str.replace(',', '', regex=False)
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
@@ -89,6 +83,16 @@ def compute_kpis(df):
     }
 
 # ------------------------------
+# Custom color mapping for years
+# ------------------------------
+year_colors = {
+    2023: '#1f77b4',  # blue
+    2024: '#2ca02c',  # green
+    2025: '#ff7f0e',  # orange
+    2026: '#d62728'   # red
+}
+
+# ------------------------------
 # Load data
 # ------------------------------
 df_all = load_all_data()
@@ -102,7 +106,6 @@ if df_all.empty:
 # ------------------------------
 st.sidebar.header("Filters")
 
-# Month selector (currently only April available, but ready for extension)
 available_months = df_all['IDS_DATE'].dt.month_name().unique()
 default_month = "April"
 if default_month in available_months:
@@ -116,7 +119,6 @@ selected_month = st.sidebar.selectbox(
     index=default_index
 )
 
-# Year multiselect
 available_years = sorted(df_all['Year'].unique())
 selected_years = st.sidebar.multiselect(
     "Select Years",
@@ -124,7 +126,6 @@ selected_years = st.sidebar.multiselect(
     default=available_years
 )
 
-# Filter data based on selection
 mask = (df_all['IDS_DATE'].dt.month_name() == selected_month) & (df_all['Year'].isin(selected_years))
 df_filtered = df_all[mask].copy()
 
@@ -135,7 +136,6 @@ if df_filtered.empty:
 # ------------------------------
 # Main dashboard
 # ------------------------------
-# ---- KPI Row ----
 st.subheader(f"📊 Key Metrics – {selected_month} {', '.join(map(str, selected_years))}")
 kpis = compute_kpis(df_filtered)
 
@@ -155,29 +155,35 @@ agg_df = df_filtered.groupby('Year').agg({
 }).reset_index()
 
 col1, col2 = st.columns(2)
+
 with col1:
+    # Bar chart with custom colors
     fig_rev = px.bar(agg_df, x='Year', y='RoomRev', text_auto='.2s',
                      title="Total Room Revenue by Year",
-                     labels={'RoomRev': 'Revenue ($)'})
+                     labels={'RoomRev': 'Revenue ($)'},
+                     color='Year', color_discrete_map=year_colors)
     fig_rev.update_traces(textposition='outside')
     st.plotly_chart(fig_rev, use_container_width=True)
 
     fig_occ = px.bar(agg_df, x='Year', y='OccPercent', text_auto='.1f',
                      title="Average Occupancy % by Year",
-                     labels={'OccPercent': 'Occupancy (%)'})
+                     labels={'OccPercent': 'Occupancy (%)'},
+                     color='Year', color_discrete_map=year_colors)
     fig_occ.update_traces(textposition='outside')
     st.plotly_chart(fig_occ, use_container_width=True)
 
 with col2:
     fig_adr = px.bar(agg_df, x='Year', y='ADR', text_auto='.2s',
                      title="Average ADR by Year",
-                     labels={'ADR': 'ADR ($)'})
+                     labels={'ADR': 'ADR ($)'},
+                     color='Year', color_discrete_map=year_colors)
     fig_adr.update_traces(textposition='outside')
     st.plotly_chart(fig_adr, use_container_width=True)
 
     fig_revpar = px.bar(agg_df, x='Year', y='RevPAR', text_auto='.2s',
                         title="Average RevPAR by Year",
-                        labels={'RevPAR': 'RevPAR ($)'})
+                        labels={'RevPAR': 'RevPAR ($)'},
+                        color='Year', color_discrete_map=year_colors)
     fig_revpar.update_traces(textposition='outside')
     st.plotly_chart(fig_revpar, use_container_width=True)
 
@@ -192,19 +198,23 @@ metric_choice = st.selectbox("Select metric to view daily trend",
                                  'RoomRev': 'Room Revenue ($)'
                              }.get(x, x))
 
+# Line chart with same custom colors
 fig_line = px.line(df_filtered, x='IDS_DATE', y=metric_choice, color='Year',
                    title=f"Daily {metric_choice} – {selected_month}",
-                   labels={'IDS_DATE': 'Date', metric_choice: metric_choice})
+                   labels={'IDS_DATE': 'Date', metric_choice: metric_choice},
+                   color_discrete_map=year_colors)
 fig_line.update_layout(hovermode='x unified')
 st.plotly_chart(fig_line, use_container_width=True)
 
-# ---- Heatmap: Occupancy by Day of Month and Year ----
+# ---- Heatmap: Occupancy by Day of Month and Year (Light to Dark Orange) ----
 st.subheader("🔥 Occupancy Heatmap (Day vs Year)")
 df_filtered['DayOfMonth'] = df_filtered['IDS_DATE'].dt.day
 pivot = df_filtered.pivot_table(index='DayOfMonth', columns='Year', values='OccPercent', aggfunc='mean')
+# Use light-to-dark orange color scale
 fig_heat = px.imshow(pivot, text_auto='.1f', aspect="auto",
-                     title="Occupancy % – Day of Month vs Year",
-                     labels=dict(x="Year", y="Day of Month", color="Occupancy %"))
+                     title="Occupancy % – Day of Month vs Year (light → dark orange = low → high occupancy)",
+                     labels=dict(x="Year", y="Day of Month", color="Occupancy %"),
+                     color_continuous_scale='Oranges')
 st.plotly_chart(fig_heat, use_container_width=True)
 
 # ---- Data table (optional) ----
