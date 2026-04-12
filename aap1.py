@@ -186,13 +186,9 @@ with col2:
     fig_revpar.update_traces(textposition='outside')
     st.plotly_chart(fig_revpar, use_container_width=True)
 
-# ---- Historical April Trend (modified: single year dropdown) ----
+# ---- Historical April Trend (multi‑year line chart) ----
 st.subheader("📅 Historical April Trend")
-# Dropdown to select one year for the trend line
-available_years_trend = sorted(df_filtered['Year'].unique())
-selected_trend_year = st.selectbox("Select April Year", options=available_years_trend)
-
-# KPI dropdown for metric
+# Dropdown only for KPI (years come from sidebar selection)
 metric_choice = st.selectbox("Select metric to view daily trend",
                              options=['OccPercent', 'ADR', 'RevPAR', 'RoomRev'],
                              format_func=lambda x: {
@@ -202,17 +198,13 @@ metric_choice = st.selectbox("Select metric to view daily trend",
                                  'RoomRev': 'Room Revenue ($)'
                              }.get(x, x))
 
-# Filter data for the selected year
-df_trend = df_filtered[df_filtered['Year'] == selected_trend_year].copy()
-
-if not df_trend.empty:
-    fig_line = px.line(df_trend, x='IDS_DATE', y=metric_choice,
-                       title=f"Daily {metric_choice} – April {selected_trend_year}",
-                       labels={'IDS_DATE': 'Date', metric_choice: metric_choice})
-    fig_line.update_layout(hovermode='x unified')
-    st.plotly_chart(fig_line, use_container_width=True)
-else:
-    st.warning(f"No data for April {selected_trend_year} with current filters.")
+# Multi‑year line chart (one line per selected year)
+fig_line = px.line(df_filtered, x='IDS_DATE', y=metric_choice, color='Year',
+                   title=f"Daily {metric_choice} – {selected_month} {', '.join(map(str, selected_years))}",
+                   labels={'IDS_DATE': 'Date', metric_choice: metric_choice},
+                   color_discrete_map=year_colors)
+fig_line.update_layout(hovermode='x unified')
+st.plotly_chart(fig_line, use_container_width=True)
 
 # ---- Heatmap: Occupancy by Day of Month and Year (Light to Dark Orange) ----
 st.subheader("🔥 Occupancy Heatmap (Day vs Year)")
