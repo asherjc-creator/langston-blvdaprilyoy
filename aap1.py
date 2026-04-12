@@ -21,21 +21,53 @@ def load_all_data():
     for year in years:
         file_path = Path(f"APRIL {year}.csv")
         if file_path.exists():
-            df = pd.read_csv(file_path, encoding='utf-8-sig')  # handles BOM
-            # Clean column names (remove spaces, quotes, etc.)
-            df.columns = df.columns.str.strip().str.replace('"', '').str.replace(' ', '')
+            # Read with utf-8-sig to remove BOM automatically
+            df = pd.read_csv(file_path, encoding='utf-8-sig')
+            
+            # Clean column names: remove quotes, extra spaces, and BOM remnants
+            df.columns = (
+                df.columns
+                .str.strip()
+                .str.replace('"', '', regex=False)
+                .str.replace(' ', '', regex=False)
+                .str.replace('﻿', '', regex=False)  # Remove BOM character if still present
+            )
+            
+            # If 'IDS_DATE' is still missing, try to find case-insensitive match
+            if 'IDS_DATE' not in df.columns:
+                for col in df.columns:
+                    if col.upper() == 'IDS_DATE':
+                        df.rename(columns={col: 'IDS_DATE'}, inplace=True)
+                        break
+            
             # Convert date column
-            df['IDS_DATE'] = pd.to_datetime(df['IDS_DATE'])
-            # Convert percentage strings to float
+            if 'IDS_DATE' in df.columns:
+                df['IDS_DATE'] = pd.to_datetime(df['IDS_DATE'], errors='coerce')
+            else:
+                st.error(f"Column 'IDS_DATE' not found in file {file_path}. Available columns: {list(df.columns)}")
+                continue
+            
+            # Convert percentage strings to float (remove % and any whitespace)
             if 'OccPercent' in df.columns:
-                df['OccPercent'] = df['OccPercent'].str.replace('%', '').str.strip().astype(float)
+                df['OccPercent'] = (
+                    df['OccPercent']
+                    .astype(str)
+                    .str.replace('%', '', regex=False)
+                    .str.strip()
+                )
+                df['OccPercent'] = pd.to_numeric(df['OccPercent'], errors='coerce')
+            
             # Ensure numeric columns are float
             numeric_cols = ['RoomRev', 'RevPAR', 'ADR', 'Occupied', 'Available', 'Rooms']
             for col in numeric_cols:
                 if col in df.columns:
+                    # Remove commas if any and convert
+                    df[col] = df[col].astype(str).str.replace(',', '', regex=False)
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+            
             df['Year'] = year
             dfs.append(df)
+    
     if dfs:
         return pd.concat(dfs, ignore_index=True)
     else:
@@ -73,10 +105,15 @@ st.sidebar.header("Filters")
 # Month selector (currently only April available, but ready for extension)
 available_months = df_all['IDS_DATE'].dt.month_name().unique()
 default_month = "April"
+if default_month in available_months:
+    default_index = list(available_months).index(default_month)
+else:
+    default_index = 0
+
 selected_month = st.sidebar.selectbox(
     "Select Month",
     options=available_months,
-    index=list(available_months).index(default_month) if default_month in available_months else 0
+    index=default_index
 )
 
 # Year multiselect
@@ -84,7 +121,7 @@ available_years = sorted(df_all['Year'].unique())
 selected_years = st.sidebar.multiselect(
     "Select Years",
     options=available_years,
-    default=available_years  # all years by default
+    default=available_years
 )
 
 # Filter data based on selection
@@ -176,7 +213,6 @@ with st.expander("📋 View Raw Data"):
 
 # ---- Storytelling Insights (auto-generated) ----
 st.subheader("📝 Quick Insights")
-# Compare 2026 vs previous years average
 if 2026 in selected_years and len(selected_years) > 1:
     avg_2026_occ = agg_df[agg_df['Year']==2026]['OccPercent'].values[0]
     avg_others_occ = agg_df[agg_df['Year']!=2026]['OccPercent'].mean()
