@@ -157,7 +157,6 @@ agg_df = df_filtered.groupby('Year').agg({
 col1, col2 = st.columns(2)
 
 with col1:
-    # Bar chart with custom colors
     fig_rev = px.bar(agg_df, x='Year', y='RoomRev', text_auto='.2s',
                      title="Total Room Revenue by Year",
                      labels={'RoomRev': 'Revenue ($)'},
@@ -187,8 +186,13 @@ with col2:
     fig_revpar.update_traces(textposition='outside')
     st.plotly_chart(fig_revpar, use_container_width=True)
 
-# ---- Daily Trends (line charts) ----
-st.subheader("📅 Daily Performance Trends")
+# ---- Historical April Trend (modified: single year dropdown) ----
+st.subheader("📅 Historical April Trend")
+# Dropdown to select one year for the trend line
+available_years_trend = sorted(df_filtered['Year'].unique())
+selected_trend_year = st.selectbox("Select April Year", options=available_years_trend)
+
+# KPI dropdown for metric
 metric_choice = st.selectbox("Select metric to view daily trend",
                              options=['OccPercent', 'ADR', 'RevPAR', 'RoomRev'],
                              format_func=lambda x: {
@@ -198,19 +202,22 @@ metric_choice = st.selectbox("Select metric to view daily trend",
                                  'RoomRev': 'Room Revenue ($)'
                              }.get(x, x))
 
-# Line chart with same custom colors
-fig_line = px.line(df_filtered, x='IDS_DATE', y=metric_choice, color='Year',
-                   title=f"Daily {metric_choice} – {selected_month}",
-                   labels={'IDS_DATE': 'Date', metric_choice: metric_choice},
-                   color_discrete_map=year_colors)
-fig_line.update_layout(hovermode='x unified')
-st.plotly_chart(fig_line, use_container_width=True)
+# Filter data for the selected year
+df_trend = df_filtered[df_filtered['Year'] == selected_trend_year].copy()
+
+if not df_trend.empty:
+    fig_line = px.line(df_trend, x='IDS_DATE', y=metric_choice,
+                       title=f"Daily {metric_choice} – April {selected_trend_year}",
+                       labels={'IDS_DATE': 'Date', metric_choice: metric_choice})
+    fig_line.update_layout(hovermode='x unified')
+    st.plotly_chart(fig_line, use_container_width=True)
+else:
+    st.warning(f"No data for April {selected_trend_year} with current filters.")
 
 # ---- Heatmap: Occupancy by Day of Month and Year (Light to Dark Orange) ----
 st.subheader("🔥 Occupancy Heatmap (Day vs Year)")
 df_filtered['DayOfMonth'] = df_filtered['IDS_DATE'].dt.day
 pivot = df_filtered.pivot_table(index='DayOfMonth', columns='Year', values='OccPercent', aggfunc='mean')
-# Use light-to-dark orange color scale
 fig_heat = px.imshow(pivot, text_auto='.1f', aspect="auto",
                      title="Occupancy % – Day of Month vs Year (light → dark orange = low → high occupancy)",
                      labels=dict(x="Year", y="Day of Month", color="Occupancy %"),
