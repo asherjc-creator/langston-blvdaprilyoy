@@ -31,19 +31,12 @@ def get_image_base64(image_path):
 
 def clean_numeric(val):
     """Strips currency symbols, commas, and handles non-numeric characters."""
-    if val is None:
+    if pd.isna(val):
+        return 0.0
+    val = str(val).replace(',', '').replace('$', '').replace('"', '').strip()
+    if val in ['∞', '', 'nan', 'None']:
         return 0.0
     try:
-        if isinstance(val, (pd.Series, pd.DataFrame)):
-            return val
-        if pd.isna(val):
-            return 0.0
-    except:
-        pass
-    try:
-        val = str(val).replace(',', '').replace('$', '').replace('"', '').strip()
-        if val in ['∞', '', 'nan', 'None']:
-            return 0.0
         return float(val)
     except:
         return 0.0
@@ -135,7 +128,6 @@ def load_all_data():
     for year, path in rc_files.items():
         if os.path.exists(path):
             temp_rc = pd.read_csv(path)
-            # Clean column names
             temp_rc.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in temp_rc.columns]
             
             # Standardize column names
@@ -143,9 +135,9 @@ def load_all_data():
             for col in temp_rc.columns:
                 if col.upper() in ['IDS_RATE_CODE', 'RATE CODE', 'RATE_CODE']:
                     rename_map[col] = 'Rate_Code'
-                elif 'ROOM REVENUE' in col.upper() or col.upper() == 'REVENUE':
+                elif 'ROOM REVENUE' in col.upper() or 'REVENUE' in col.upper():
                     rename_map[col] = 'Room_Revenue'
-                elif 'ROOM NIGHTS' in col.upper() or col.upper() == 'NIGHTS':
+                elif 'ROOM NIGHTS' in col.upper() or 'NIGHTS' in col.upper():
                     rename_map[col] = 'Room_Nights'
                 elif 'AVG' in col.upper() or 'DAILY AVG' in col.upper():
                     rename_map[col] = 'Daily_Avg'
@@ -153,10 +145,9 @@ def load_all_data():
             if rename_map:
                 temp_rc.rename(columns=rename_map, inplace=True)
             
-            # Clean numeric columns using map instead of apply
             for col in temp_rc.columns:
                 if any(x in col for x in ['Revenue', 'AVG', 'Nights']):
-                    temp_rc[col] = temp_rc[col].map(clean_numeric)
+                    temp_rc[col] = temp_rc[col].apply(clean_numeric)
             rc_data[year] = temp_rc
 
     # C. Events with Premium Dates
@@ -670,4 +661,4 @@ if not res.empty:
     if row['Premium'] > 0:
         st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
 else:
-    st.info("No forecast available
+    st.info("No forecast available for that exact date.")
