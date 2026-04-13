@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from PIL import Image
-from io import BytesIO
-import base64
 
 # -----------------------------
 # Page Configuration
@@ -17,160 +14,109 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Custom Styling
-# -----------------------------
-st.markdown("""
-<style>
-    .main { background-color:#f8f9fa; }
-    .metric-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #eef0f2;
-    }
-    .strategy-box {
-        background-color: #f0f7ff;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 6px solid #007bff;
-        margin-bottom: 20px;
-    }
-    .status-decline { color: #d9534f; font-weight: bold; }
-    .status-growth { color: #5cb85c; font-weight: bold; }
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------
-# Data Definition (Extracted from Strategy PDF)
+# Data Loading (Updated with User Tables & PDF Source)
 # -----------------------------
 @st.cache_data
-def get_dashboard_data():
-    # YOY KPI Data
-    kpi_data = pd.DataFrame([
-        {"Quarter": "Q1", "Year": 2024, "Occ%": 82.3, "ADR": 83.10, "RevPAR": 68.42, "Status": "Benchmark"},
-        {"Quarter": "Q1", "Year": 2025, "Occ%": 64.2, "ADR": 96.18, "RevPAR": 61.71, "Status": "Rate > Volume"},
-        {"Quarter": "Q1", "Year": 2026, "Occ%": 51.4, "ADR": 95.56, "RevPAR": 49.13, "Status": "Current"},
-        {"Quarter": "Q2", "Year": 2024, "Occ%": 90.5, "ADR": 121.22, "RevPAR": 109.68, "Status": "Peak"},
-        {"Quarter": "Q2", "Year": 2025, "Occ%": 89.4, "ADR": 109.19, "RevPAR": 97.57, "Status": "Strong"},
-        {"Quarter": "Q2", "Year": 2026, "Occ%": 25.5, "ADR": 121.55, "RevPAR": 30.95, "Status": "Critical Gap"}
+def load_dashboard_data():
+    # 1. 3-Year KPI Comparison (Derived from [cite: 9])
+    kpi_comp = pd.DataFrame([
+        {"Year": 2024, "ADR": 109.68, "RevPAR": 121.22, "OCC%": 90.5, "Rooms_Revenue": 485000},
+        {"Year": 2025, "ADR": 97.57, "RevPAR": 109.19, "OCC%": 89.4, "Rooms_Revenue": 412000},
+        {"Year": 2026, "ADR": 121.55, "RevPAR": 30.95, "OCC%": 25.5, "Rooms_Revenue": 115000}
     ])
 
-    # 2025 Gap Analysis
-    gap_data = pd.DataFrame([
-        {"Quarter": "Q1", "ADR_Gap": 13.08, "RevPAR_Gap": -6.70, "Rev_Loss": -31569, "Cause": "Overpricing reduced demand"},
-        {"Quarter": "Q2", "ADR_Gap": -12.11, "RevPAR_Gap": -12.03, "Rev_Loss": -51785, "Cause": "Lower rates didn't drive volume"},
-        {"Quarter": "Q3", "ADR_Gap": -30.71, "RevPAR_Gap": -6.17, "Rev_Loss": -132806, "Cause": "Major volume collapse"},
-        {"Quarter": "Q4", "ADR_Gap": -10.47, "RevPAR_Gap": -11.42, "Rev_Loss": -49385, "Cause": "Weak demand + rate cuts"}
+    # 2. Graphical Rate Code Performance (User Requested Table)
+    rate_code_data = pd.DataFrame([
+        {"Rate Code": "SO2BK", "2024 Revenue": 60631, "Status 2025": "Performing", "Status 2026": "Disappeared"},
+        {"Rate Code": "SO1R", "2024 Revenue": 35596, "Status 2025": "Disappeared", "Status 2026": "Disappeared"},
+        {"Rate Code": "SOPM1M", "2024 Revenue": 34228, "Status 2025": "Disappeared", "Status 2026": "Disappeared"},
+        {"Rate Code": "SO2R", "2024 Revenue": 29754, "Status 2025": "Performing", "Status 2026": "Disappeared"},
+        {"Rate Code": "SO1EXP", "2024 Revenue": 27177, "Status 2025": "Disappeared", "Status 2026": "Disappeared"},
+        {"Rate Code": "GROUP", "2024 Revenue": 22739, "Status 2025": "Underperforming", "Status 2026": "Disappeared"}
     ])
     
-    return kpi_data, gap_data
+    return kpi_comp, rate_code_data
 
-kpi_df, gap_df = get_dashboard_data()
-
-# -----------------------------
-# Sidebar
-# -----------------------------
-with st.sidebar:
-    st.image("https://img.icons8.com/fluency/144/hotel.png", width=100)
-    st.title("Asher Jannu")
-    st.markdown("### **Revenue Analyst**")
-    st.write("---")
-    selected_year = st.multiselect("Filter Years", [2024, 2025, 2026], default=[2024, 2025, 2026])
-    st.info("Focus: Q2 2026 Recovery Strategy")
+kpi_df, rate_df = load_dashboard_data()
 
 # -----------------------------
-# Header
+# Header Section
 # -----------------------------
-st.title("🏨 Quarterly YOY KPI Analysis & 2026 Recovery")
-st.markdown(f"**Data Status:** Immediate action required for Q2 revenue leakage prevention.")
+st.title("🏨 2026 Revenue Recovery & Strategy Portal")
+st.info("Strategic Focus: Reclaiming >$200K in lost segment contribution by rebalancing pricing and volume[cite: 22, 37].")
 
 # -----------------------------
-# Section 1: KPIs YOY
+# Section 1: Dashboard KPI Comparison (2024-2026)
 # -----------------------------
-st.header("1. Performance Metrics (YOY)")
-m1, m2, m3 = st.columns(3)
+st.header("1. 3-Year KPI Comparison (Q2 Performance)")
+cols = st.columns(4)
 
-latest_q2 = kpi_df[(kpi_df['Quarter'] == 'Q2') & (kpi_df['Year'] == 2026)].iloc[0]
-prev_q2 = kpi_df[(kpi_df['Quarter'] == 'Q2') & (kpi_df['Year'] == 2025)].iloc[0]
+# Displaying Metrics for the latest year (2026) with comparison to 2024 baseline
+for i, metric in enumerate(["ADR", "RevPAR", "OCC%", "Rooms_Revenue"]):
+    val_26 = kpi_df.loc[2, metric]
+    val_24 = kpi_df.loc[0, metric]
+    delta = val_26 - val_24
+    
+    suffix = "$" if metric != "OCC%" else "%"
+    prefix = "$" if metric in ["ADR", "RevPAR", "Rooms_Revenue"] else ""
+    
+    cols[i].metric(
+        label=metric.replace("_", " "),
+        value=f"{prefix}{val_26:,.2f}{suffix if metric == 'OCC%' else ''}",
+        delta=f"{delta:,.2f} vs 2024",
+        delta_color="inverse" if metric != "ADR" else "normal"
+    )
 
-m1.metric("Q2 2026 ADR", f"${latest_q2['ADR']}", delta=f"{latest_q2['ADR'] - prev_q2['ADR']:.2f} (High Rate)")
-m2.metric("Q2 2026 Occupancy", f"{latest_q2['Occ%']}%", delta=f"{latest_q2['Occ%'] - prev_q2['Occ%']:.1f}%", delta_color="inverse")
-m3.metric("Q2 2026 RevPAR", f"${latest_q2['RevPAR']}", delta=f"{latest_q2['RevPAR'] - prev_q2['RevPAR']:.2f}", delta_color="inverse")
+# Visual Comparison Chart
+fig_kpi = go.Figure()
+for metric in ["ADR", "RevPAR"]:
+    fig_kpi.add_trace(go.Bar(x=kpi_df["Year"], y=kpi_df[metric], name=metric))
 
-# Chart: RevPAR & Occ Trends
-fig_kpi = px.bar(
-    kpi_df[kpi_df['Year'].isin(selected_year)], 
-    x="Quarter", y="RevPAR", color="Year", barmode="group",
-    title="RevPAR Comparison by Quarter (2024-2026)",
-    color_discrete_sequence=px.colors.qualitative.Pastel
-)
+fig_kpi.update_layout(title="ADR vs RevPAR Trends (2024-2026)", barmode='group', height=400)
 st.plotly_chart(fig_kpi, use_container_width=True)
 
 # -----------------------------
-# Section 2: 2025 Gap Analysis
+# Section 2: Rate Code Performance (Graphical Table)
 # -----------------------------
 st.write("---")
-st.header("2. 2025 ADR & RevPAR Gap Analysis")
-st.error("Total Revenue Leakage in 2025: **-$265,545** primarily due to volume collapse in Q3.")
+st.header("2. Critical Rate Code Analysis (Revenue Leakage)")
 
-col_gap_1, col_gap_2 = st.columns([2, 1])
+def style_status(val):
+    if val == "Disappeared": return 'color: #d9534f; font-weight: bold'
+    if val == "Performing": return 'color: #5cb85c; font-weight: bold'
+    return 'color: #f0ad4e'
 
-with col_gap_1:
-    fig_loss = px.area(gap_df, x="Quarter", y="Rev_Loss", title="Revenue Loss Trends by Quarter (2025)")
-    fig_loss.update_traces(line_color='#d9534f')
-    st.plotly_chart(fig_loss, use_container_width=True)
+styled_rate_df = rate_df.style.applymap(style_status, subset=['Status 2025', 'Status 2026'])\
+    .format({"2024 Revenue": "${:,.0f}"})
 
-with col_gap_2:
-    st.write("#### Primary Leakage Causes")
-    for _, row in gap_df.iterrows():
-        st.markdown(f"**{row['Quarter']}**: {row['Cause']}  \n*(Loss: ${abs(row['Rev_Loss']):,.0f})*")
+st.table(styled_rate_df)
+
+# Graphical Breakdown of Lost Revenue
+fig_rate = px.pie(rate_df, values='2024 Revenue', names='Rate Code', 
+                 title="2024 Contribution of Now-Inactive Segments",
+                 hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+st.plotly_chart(fig_rate, use_container_width=True)
 
 # -----------------------------
-# Section 3: 2026 Strategy
+# Section 3: Strategic Recovery Plan (0-7 Days)
 # -----------------------------
 st.write("---")
-st.header("3. 2026 Strategic Recovery Plan")
-st.info("Objective: Rebalance pricing to achieve 2024 baseline revenue levels.")
+st.header("3. 0-7 Day Execution Roadmap")
 
-strat_1, strat_2 = st.columns(2)
-
-with strat_1:
-    st.markdown("""
-    <div class="strategy-box">
-        <h4>Immediate Pricing Adjustments (Next 48 Hours)</h4>
-        <ul>
-            <li><b>Lower Q2 Floor:</b> Drop rates by 10-18% across all OTAs.</li>
-            <li><b>Target ADR:</b> Realign from $121 to ~$109 to drive 75%+ Occupancy.</li>
-            <li><b>Spring Promotion:</b> Launch "Stay 2, Save 20%" via GDS/Web.</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-with strat_2:
-    st.markdown("""
-    <div class="strategy-box">
-        <h4>Inventory & Channel Activation</h4>
-        <ul>
-            <li><b>Reactivate Rate Codes:</b> Recover SO2BK and SO2R (Lost $200K+ contribution).</li>
-            <li><b>ChoiceMAX Audit:</b> Calibrate seasonal parameters to market demand.</li>
-            <li><b>Distribution:</b> Optimize Wholesale and GDS presence.</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Roadmap Table
-st.write("#### Execution Roadmap")
-roadmap = pd.DataFrame({
-    "Timeframe": ["Next 48 Hours", "Next 48 Hours", "Next 48 Hours", "Next 72 Hours"],
-    "Task": [
-        "Lower Q2 floor rates by 10-18%",
-        "Audit/Reactivate SO2BK & SO1R",
-        "Launch 'Stay 2, Save 20%' Promo",
-        "Finalize Q3/Q4 Distribution Strategy"
+roadmap_data = pd.DataFrame({
+    "Day Range": ["Day 0-2", "Day 0-2", "Day 0-2", "Day 3-5", "Day 5-7"],
+    "Priority Task": [
+        "Immediate Rate Drop: Lower Q2 floor by 10-18% ",
+        "Audit Inactive Codes: Investigate SO2BK, SO1R, & SO2R ",
+        "Launch 'Stay 2, Save 20%' Spring Promo ",
+        "Reactivate High-Producing Rate Codes in PMS/CRS [cite: 36]",
+        "Leadership Review: Q3/Q4 Distribution Strategy "
     ],
-    "Stakeholder": ["Revenue Mgr", "Tech/Ops", "Marketing", "Leadership"]
+    "Owner": ["Revenue Mgr", "Tech/Ops", "Marketing", "Leadership"],
+    "Status": ["Urgent", "Urgent", "In Progress", "Planned", "Scheduled"]
 })
-st.table(roadmap)
 
-st.success("Target Rebalance: ~\$109 ADR @ 75-80% Occ = Higher Total Revenue than Current \$121 ADR @ 25% Occ.")
+# Displaying the roadmap with status coloring
+st.table(roadmap_data)
+
+st.warning("**Note:** Target rebalance is ~$109 ADR at 75-80% Occupancy to recover lost RevPAR[cite: 42].")
