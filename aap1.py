@@ -135,10 +135,8 @@ def load_all_data():
     for year, path in rc_files.items():
         if os.path.exists(path):
             temp_rc = pd.read_csv(path)
-            # Clean column names
             temp_rc.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in temp_rc.columns]
             
-            # Standardize column names
             rename_map = {}
             for col in temp_rc.columns:
                 if col.upper() in ['IDS_RATE_CODE', 'RATE CODE', 'RATE_CODE']:
@@ -153,7 +151,6 @@ def load_all_data():
             if rename_map:
                 temp_rc.rename(columns=rename_map, inplace=True)
             
-            # Clean numeric columns using map instead of apply
             for col in temp_rc.columns:
                 if any(x in col for x in ['Revenue', 'AVG', 'Nights']):
                     temp_rc[col] = temp_rc[col].map(clean_numeric)
@@ -276,7 +273,6 @@ st.header("🔍 2025 Gap Analysis: ADR vs RevPAR")
 df25 = df[df['Date'].dt.year == 2025].sort_values('Date')
 
 if not df25.empty:
-    # Calculate monthly averages for smoother trend
     df25['Month'] = df25['Date'].dt.to_period('M')
     monthly_avg = df25.groupby('Month').agg({
         'ADR': 'mean',
@@ -286,10 +282,8 @@ if not df25.empty:
     }).reset_index()
     monthly_avg['Month_Date'] = monthly_avg['Month'].dt.to_timestamp()
 
-    # Line chart with ADR, RevPAR, and the gap
     fig_gap = go.Figure()
     
-    # Daily data (lighter lines)
     fig_gap.add_trace(go.Scatter(
         x=df25['Date'], y=df25['ADR'],
         name='ADR (Daily)', line=dict(color='#2ca02c', width=1), opacity=0.4
@@ -299,7 +293,6 @@ if not df25.empty:
         name='RevPAR (Daily)', line=dict(color='#d62728', width=1, dash='dot'), opacity=0.4
     ))
     
-    # Monthly averages (bold lines)
     fig_gap.add_trace(go.Scatter(
         x=monthly_avg['Month_Date'], y=monthly_avg['ADR'],
         name='ADR (Monthly Avg)', line=dict(color='#2ca02c', width=3)
@@ -309,7 +302,6 @@ if not df25.empty:
         name='RevPAR (Monthly Avg)', line=dict(color='#d62728', width=3, dash='dot')
     ))
     
-    # Add shaded area representing the gap (ADR - RevPAR)
     fig_gap.add_trace(go.Scatter(
         x=df25['Date'], y=df25['ADR'] - df25['RevPAR'],
         fill='tozeroy',
@@ -326,7 +318,6 @@ if not df25.empty:
     )
     st.plotly_chart(fig_gap, use_container_width=True)
 
-    # Key metrics for 2025
     avg_adr_25 = df25['ADR'].mean()
     avg_revpar_25 = df25['RevPAR'].mean()
     avg_occ_25 = df25['Occupancy'].mean() * 100
@@ -338,7 +329,6 @@ if not df25.empty:
     m3.metric("Avg Occupancy 2025", f"{avg_occ_25:.1f}%")
     m4.metric("ADR-RevPAR Gap", f"${gap_25:.2f}")
 
-    # Monthly breakdown table
     st.subheader("📊 2025 Monthly Performance Breakdown")
     monthly_display = monthly_avg.copy()
     monthly_display['Month_Str'] = monthly_display['Month'].astype(str)
@@ -353,7 +343,6 @@ if not df25.empty:
     
     st.dataframe(display_df, hide_index=True, use_container_width=True)
 
-    # Detailed analysis explanation
     st.markdown(f"""
     ---
     ### 📋 2025 Gap Analysis Observations
@@ -395,7 +384,6 @@ df24_comp = df[df['Date'].dt.year == 2024].copy()
 df25_comp = df[df['Date'].dt.year == 2025].copy()
 
 if not df24_comp.empty and not df25_comp.empty:
-    # Monthly aggregation for both years
     df24_comp['Month'] = df24_comp['Date'].dt.month
     df25_comp['Month'] = df25_comp['Date'].dt.month
     
@@ -417,22 +405,17 @@ if not df24_comp.empty and not df25_comp.empty:
     }).reset_index()
     monthly_25['Year'] = 2025
     
-    # Comparison charts
     fig_comp = make_subplots(rows=2, cols=2, subplot_titles=('ADR Comparison', 'RevPAR Comparison', 'Occupancy Comparison', 'Revenue Comparison'))
     
-    # ADR
     fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['ADR'], name='ADR 2024', line=dict(color='#1f77b4')), row=1, col=1)
     fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['ADR'], name='ADR 2025', line=dict(color='#ff7f0e')), row=1, col=1)
     
-    # RevPAR
     fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['RevPAR'], name='RevPAR 2024', line=dict(color='#1f77b4')), row=1, col=2)
     fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['RevPAR'], name='RevPAR 2025', line=dict(color='#ff7f0e')), row=1, col=2)
     
-    # Occupancy
     fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['Occupancy']*100, name='Occ % 2024', line=dict(color='#1f77b4')), row=2, col=1)
     fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['Occupancy']*100, name='Occ % 2025', line=dict(color='#ff7f0e')), row=2, col=1)
     
-    # Revenue
     fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['Room_Revenue'], name='Revenue 2024', line=dict(color='#1f77b4')), row=2, col=2)
     fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['Room_Revenue'], name='Revenue 2025', line=dict(color='#ff7f0e')), row=2, col=2)
     
@@ -446,7 +429,6 @@ if not df24_comp.empty and not df25_comp.empty:
     
     st.plotly_chart(fig_comp, use_container_width=True)
     
-    # Summary metrics
     total_rev_24 = df24_comp['Room_Revenue'].sum()
     total_rev_25 = df25_comp['Room_Revenue'].sum()
     rev_change = ((total_rev_25 - total_rev_24) / total_rev_24) * 100 if total_rev_24 > 0 else 0
@@ -509,7 +491,6 @@ st.header("📊 2026 Reservation Activity Analysis")
 
 df26 = df[df['Date'].dt.year == 2026].sort_values('Date')
 if not df26.empty:
-    # Show pickup (Arrivals) and occupancy trend
     fig_act = make_subplots(specs=[[{"secondary_y": True}]])
     fig_act.add_trace(go.Bar(
         x=df26['Date'], y=df26['Arrivals'],
@@ -529,7 +510,6 @@ if not df26.empty:
     )
     st.plotly_chart(fig_act, use_container_width=True)
 
-    # Booking pace comparison
     df25_comp = df[df['Date'].dt.year == 2025].sort_values('Date')
     if not df25_comp.empty:
         df26['DayOfYear'] = df26['Date'].dt.dayofyear
@@ -670,4 +650,4 @@ if not res.empty:
     if row['Premium'] > 0:
         st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
 else:
-    st.info("No forecast available
+    st.info("No forecast available for that exact date.")
