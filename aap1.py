@@ -737,12 +737,17 @@ with h2:
 # -----------------------------
 st.write("---")
 st.write("### 🤖 AI Pricing Recommendation Engine")
+
+# Set the default check date to 14 days from the last data point
 check_date = st.date_input(
     "Query a Specific Future Date:",
     forecast_start + timedelta(days=14),
     min_value=forecast_start.date()
 )
+
+# Convert the selected date to datetime for filtering
 res = forecast_df[forecast_df["Date"] == pd.to_datetime(check_date)]
+
 if not res.empty:
     row = res.iloc[0]
     st.metric(
@@ -750,9 +755,13 @@ if not res.empty:
         f"${row['Suggested_Rate']:.2f}",
         delta="Enforced $90 Floor"
     )
+    
+    # Display event warnings or success messages based on impact
     if row['Impact_Level'] != "None":
         st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
+    
     if row['Premium'] > 0:
         st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
 else:
-   
+    # This handles dates selected outside the 90-day forecast window
+    st.info("The selected date is outside the current 90-day predictive window. Please select a date closer to the current period.")
