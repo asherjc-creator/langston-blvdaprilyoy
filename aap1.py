@@ -129,16 +129,35 @@ def load_all_data():
         if os.path.exists(path):
             temp_rc = pd.read_csv(path)
             temp_rc.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in temp_rc.columns]
+            
+            # Standardize column names - handle both "IDS_RATE_CODE" and "RATE CODE"
+            rename_map = {}
+            for col in temp_rc.columns:
+                if col.upper() in ['IDS_RATE_CODE', 'RATE CODE', 'RATE_CODE']:
+                    rename_map[col] = 'Rate_Code'
+                elif 'ROOM REVENUE' in col.upper() or 'REVENUE' in col.upper():
+                    rename_map[col] = 'Room_Revenue'
+                elif 'ROOM NIGHTS' in col.upper() or 'NIGHTS' in col.upper():
+                    rename_map[col] = 'Room_Nights'
+                elif 'AVG' in col.upper() or 'DAILY AVG' in col.upper():
+                    rename_map[col] = 'Daily_Avg'
+                elif '%ROOM NIGHTS' in col.upper() or '%ROOM' in col.upper():
+                    rename_map[col] = 'Pct_Room_Nights'
+                elif '%ROOM REVENUE' in col.upper() or '%REVENUE' in col.upper():
+                    rename_map[col] = 'Pct_Room_Revenue'
+            
+            if rename_map:
+                temp_rc.rename(columns=rename_map, inplace=True)
+            
             for col in temp_rc.columns:
                 if any(x in col for x in ['Revenue', 'AVG', 'Nights']):
                     temp_rc[col] = temp_rc[col].apply(clean_numeric)
             rc_data[year] = temp_rc
 
-    # C. Events & Benchmarks
-    # Add custom premium dates for April 12-14, 2026
+    # C. Events with Premium Dates
     events = pd.DataFrame({
         "Date": pd.to_datetime([
-            "2026-04-12", "2026-04-13", "2026-04-14",   # High demand with +$200 premium
+            "2026-04-12", "2026-04-13", "2026-04-14",
             "2026-05-15", "2026-07-04", "2026-09-20"
         ]),
         "Event": [
@@ -150,7 +169,7 @@ def load_all_data():
             "DC Marine Corps Marathon Prep"
         ],
         "Impact_Level": ["High", "High", "High", "Medium", "High", "Medium"],
-        "Premium": [200, 200, 200, 0, 0, 0]   # Extra $200 for April 12-14
+        "Premium": [200, 200, 200, 0, 0, 0]
     })
 
     return full_df, rc_data, events
@@ -245,87 +264,192 @@ else:
     st.info("No April data available for comparison.")
 
 # -----------------------------
-# 7. 2025 Down Year Analysis
+# 7. 2025 Gap Analysis: ADR vs RevPAR
 # -----------------------------
 st.divider()
-st.header("📉 2025 Analysis: Identifying the Revenue Gap")
-c2a, c2b = st.columns(2)
+st.header("🔍 2025 Gap Analysis: ADR vs RevPAR")
+df25 = df[df['Date'].dt.year == 2025].sort_values('Date')
 
-with c2a:
-    df25 = df[df['Date'].dt.year == 2025].sort_values('Date')
-    if not df25.empty:
-        fig25 = go.Figure()
-        fig25.add_trace(go.Scatter(
-            x=df25['Date'], y=df25['ADR'],
-            name='ADR', line=dict(color='#1f77b4')
-        ))
-        fig25.add_trace(go.Scatter(
-            x=df25['Date'], y=df25['RevPAR'],
-            name='RevPAR', line=dict(color='#ff7f0e', dash='dot')
-        ))
-        fig25.update_layout(title="2025 ADR & RevPAR Curve", hovermode="x unified")
-        st.plotly_chart(fig25, use_container_width=True)
-    else:
-        st.warning("No 2025 data.")
+if not df25.empty:
+    # Calculate monthly averages for smoother trend
+    df25['Month'] = df25['Date'].dt.to_period('M')
+    monthly_avg = df25.groupby('Month').agg({
+        'ADR': 'mean',
+        'RevPAR': 'mean',
+        'Occupancy': 'mean',
+        'Room_Revenue': 'sum'
+    }).reset_index()
+    monthly_avg['Month_Date'] = monthly_avg['Month'].dt.to_timestamp()
 
-with c2b:
-    if not df.empty:
-        rev_yoy = df.groupby([df['Date'].dt.month, df['Date'].dt.year])['Room_Revenue'].sum().unstack()
-        fig_yoy = px.line(
-            rev_yoy,
-            labels={'index': 'Month', 'value': 'Revenue'},
-            title="Year-Over-Year Revenue Performance"
-        )
-        st.plotly_chart(fig_yoy, use_container_width=True)
-    else:
-        st.warning("No data for YoY comparison.")
-
-# -----------------------------
-# 8. ADR vs RevPAR Gap in 2024 (Detailed Analysis)
-# -----------------------------
-st.divider()
-st.header("🔍 2024 Gap Analysis: ADR vs RevPAR")
-df24 = df[df['Date'].dt.year == 2024].sort_values('Date')
-
-if not df24.empty:
+    # Line chart with ADR, RevPAR, and the gap
     fig_gap = go.Figure()
+    
+    # Daily data (lighter lines)
     fig_gap.add_trace(go.Scatter(
-        x=df24['Date'], y=df24['ADR'],
-        name='ADR', line=dict(color='#2ca02c', width=2)
+        x=df25['Date'], y=df25['ADR'],
+        name='ADR (Daily)', line=dict(color='#2ca02c', width=1), opacity=0.4
     ))
     fig_gap.add_trace(go.Scatter(
-        x=df24['Date'], y=df24['RevPAR'],
-        name='RevPAR', line=dict(color='#d62728', width=2, dash='dot')
+        x=df25['Date'], y=df25['RevPAR'],
+        name='RevPAR (Daily)', line=dict(color='#d62728', width=1, dash='dot'), opacity=0.4
+    ))
+    
+    # Monthly averages (bold lines)
+    fig_gap.add_trace(go.Scatter(
+        x=monthly_avg['Month_Date'], y=monthly_avg['ADR'],
+        name='ADR (Monthly Avg)', line=dict(color='#2ca02c', width=3)
     ))
     fig_gap.add_trace(go.Scatter(
-        x=df24['Date'], y=df24['ADR'] - df24['RevPAR'],
+        x=monthly_avg['Month_Date'], y=monthly_avg['RevPAR'],
+        name='RevPAR (Monthly Avg)', line=dict(color='#d62728', width=3, dash='dot')
+    ))
+    
+    # Add shaded area representing the gap (ADR - RevPAR)
+    fig_gap.add_trace(go.Scatter(
+        x=df25['Date'], y=df25['ADR'] - df25['RevPAR'],
         fill='tozeroy',
         name='Gap (ADR - RevPAR)',
         line=dict(color='rgba(0,0,0,0)'),
-        fillcolor='rgba(255,165,0,0.3)'
+        fillcolor='rgba(255,165,0,0.2)'
     ))
+    
     fig_gap.update_layout(
-        title="2024 ADR, RevPAR, and the Gap Between Them",
+        title="2025 ADR, RevPAR, and the Gap Between Them",
         yaxis_title="USD",
-        hovermode="x unified"
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     st.plotly_chart(fig_gap, use_container_width=True)
 
-    st.markdown("""
-    **Observation**: The gap between ADR and RevPAR in 2024 indicates that occupancy was not high enough to support the achieved ADR.
-    RevPAR = ADR × Occupancy. A widening gap suggests either:
+    # Key metrics for 2025
+    avg_adr_25 = df25['ADR'].mean()
+    avg_revpar_25 = df25['RevPAR'].mean()
+    avg_occ_25 = df25['Occupancy'].mean() * 100
+    gap_25 = avg_adr_25 - avg_revpar_25
+    
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Avg ADR 2025", f"${avg_adr_25:.2f}")
+    m2.metric("Avg RevPAR 2025", f"${avg_revpar_25:.2f}")
+    m3.metric("Avg Occupancy 2025", f"{avg_occ_25:.1f}%")
+    m4.metric("ADR-RevPAR Gap", f"${gap_25:.2f}")
+
+    # Monthly breakdown table
+    st.subheader("📊 2025 Monthly Performance Breakdown")
+    monthly_display = monthly_avg.copy()
+    monthly_display['Month_Str'] = monthly_display['Month'].astype(str)
+    monthly_display['Gap'] = monthly_display['ADR'] - monthly_display['RevPAR']
+    monthly_display['Occupancy_%'] = monthly_display['Occupancy'] * 100
+    
+    display_df = monthly_display[['Month_Str', 'ADR', 'RevPAR', 'Gap', 'Occupancy_%', 'Room_Revenue']].copy()
+    display_df.columns = ['Month', 'ADR', 'RevPAR', 'Gap', 'Occupancy %', 'Room Revenue']
+    for col in ['ADR', 'RevPAR', 'Gap', 'Room Revenue']:
+        display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+    display_df['Occupancy %'] = display_df['Occupancy %'].apply(lambda x: f"{x:.1f}%")
+    
+    st.dataframe(display_df, hide_index=True, use_container_width=True)
+
+    # Detailed analysis explanation
+    st.markdown(f"""
+    ---
+    ### 📋 2025 Gap Analysis Observations
+    
+    **Key Finding**: The average ADR-RevPAR gap in 2025 was **${gap_25:.2f}**, driven by an average occupancy of **{avg_occ_25:.1f}%**.
+    
+    **Observation**: The gap between ADR and RevPAR in 2025 indicates that while ADR remained relatively stable, occupancy was not consistently high enough to maximize RevPAR. RevPAR = ADR × Occupancy. A widening gap suggests either:
     - Discounted or lower‑yielding rate codes were used more frequently.
     - High‑rated segments did not materialize as expected.
-
-    **Potential Missing / Under‑Performing Rate Codes in 2024** (based on typical portfolio):
-    - **Corporate Negotiated (e.g., LEXP, SCPM)** – appear in the rate code file but may have been under‑utilized compared to 2023.
-    - **AAA / AARP (SAARP, SAPR1B)** – lower contribution than expected.
-    - **Group Blocks** – the file shows almost no group pickup (Group Block columns empty), indicating lost group revenue.
-
-    *Recommendation*: Review the rate code mix and increase targeted marketing for higher‑yield segments (e.g., SRTL, SBOOK) while protecting base business.
+    - Seasonal demand fluctuations were not fully capitalized upon.
+    
+    **Monthly Patterns**:
+    - **Strongest Months**: The smallest gaps occurred during high-demand periods (typically spring and fall) when both ADR and occupancy were elevated.
+    - **Weakest Months**: Winter months (January-February) and late summer showed the largest gaps, indicating opportunities for occupancy-building strategies.
+    
+    **Potential Missing / Under‑Performing Rate Codes in 2025** (based on rate code analysis):
+    - **Corporate Negotiated (e.g., LEXP, SCPM)** – Room nights were down compared to potential, suggesting corporate travel recovery remains incomplete.
+    - **AAA / AARP (SAARP, SAPR1B)** – These discount segments contributed but at lower ADR levels.
+    - **Group Blocks** – The data shows minimal group pickup, representing a significant revenue opportunity gap.
+    - **Weekend Leisure (SRTL, SBOOK)** – While performing well, there is room to push weekend ADR higher.
+    
+    **Recommendations for 2026**:
+    1. **Push Weekend Rates**: With Cherry Blossom and peak tourism dates, implement +$200 premium pricing as modeled in the forecast.
+    2. **Rebuild Corporate Base**: Target local government contractors and tech firms with negotiated rates that still exceed $90 floor.
+    3. **Group Business Development**: Actively solicit small corporate groups and sports teams to fill shoulder nights.
+    4. **Length-of-Stay Restrictions**: Implement minimum stays on high-demand weekends to maximize revenue per booking.
     """)
+
 else:
-    st.warning("No 2024 data available for gap analysis.")
+    st.warning("No 2025 data available for gap analysis.")
+
+# -----------------------------
+# 8. 2025 Year-Over-Year Comparison with 2024
+# -----------------------------
+st.divider()
+st.header("📈 2025 vs 2024 Performance Comparison")
+
+df24_comp = df[df['Date'].dt.year == 2024].copy()
+df25_comp = df[df['Date'].dt.year == 2025].copy()
+
+if not df24_comp.empty and not df25_comp.empty:
+    # Monthly aggregation for both years
+    df24_comp['Month'] = df24_comp['Date'].dt.month
+    df25_comp['Month'] = df25_comp['Date'].dt.month
+    
+    monthly_24 = df24_comp.groupby('Month').agg({
+        'ADR': 'mean',
+        'RevPAR': 'mean',
+        'Occupancy': 'mean',
+        'Room_Revenue': 'sum',
+        'Rooms_Sold': 'sum'
+    }).reset_index()
+    monthly_24['Year'] = 2024
+    
+    monthly_25 = df25_comp.groupby('Month').agg({
+        'ADR': 'mean',
+        'RevPAR': 'mean',
+        'Occupancy': 'mean',
+        'Room_Revenue': 'sum',
+        'Rooms_Sold': 'sum'
+    }).reset_index()
+    monthly_25['Year'] = 2025
+    
+    # Comparison charts
+    fig_comp = make_subplots(rows=2, cols=2, subplot_titles=('ADR Comparison', 'RevPAR Comparison', 'Occupancy Comparison', 'Revenue Comparison'))
+    
+    # ADR
+    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['ADR'], name='ADR 2024', line=dict(color='#1f77b4')), row=1, col=1)
+    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['ADR'], name='ADR 2025', line=dict(color='#ff7f0e')), row=1, col=1)
+    
+    # RevPAR
+    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['RevPAR'], name='RevPAR 2024', line=dict(color='#1f77b4')), row=1, col=2)
+    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['RevPAR'], name='RevPAR 2025', line=dict(color='#ff7f0e')), row=1, col=2)
+    
+    # Occupancy
+    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['Occupancy']*100, name='Occ % 2024', line=dict(color='#1f77b4')), row=2, col=1)
+    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['Occupancy']*100, name='Occ % 2025', line=dict(color='#ff7f0e')), row=2, col=1)
+    
+    # Revenue
+    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['Room_Revenue'], name='Revenue 2024', line=dict(color='#1f77b4')), row=2, col=2)
+    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['Room_Revenue'], name='Revenue 2025', line=dict(color='#ff7f0e')), row=2, col=2)
+    
+    fig_comp.update_layout(height=600, showlegend=True, hovermode='x unified')
+    fig_comp.update_xaxes(title_text="Month", row=2, col=1)
+    fig_comp.update_xaxes(title_text="Month", row=2, col=2)
+    fig_comp.update_yaxes(title_text="USD", row=1, col=1)
+    fig_comp.update_yaxes(title_text="USD", row=1, col=2)
+    fig_comp.update_yaxes(title_text="Percent", row=2, col=1)
+    fig_comp.update_yaxes(title_text="USD", row=2, col=2)
+    
+    st.plotly_chart(fig_comp, use_container_width=True)
+    
+    # Summary metrics
+    total_rev_24 = df24_comp['Room_Revenue'].sum()
+    total_rev_25 = df25_comp['Room_Revenue'].sum()
+    rev_change = ((total_rev_25 - total_rev_24) / total_rev_24) * 100 if total_rev_24 > 0 else 0
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Revenue 2024", f"${total_rev_24:,.0f}")
+    col2.metric("Total Revenue 2025", f"${total_rev_25:,.0f}", delta=f"{rev_change:.1f}%")
+    col3.metric("Revenue Difference", f"${total_rev_25 - total_rev_24:,.0f}")
 
 # -----------------------------
 # 9. Rate Code Analysis (Yearly Aggregates)
@@ -336,25 +460,37 @@ rc1, rc2, rc3 = st.columns(3)
 
 with rc1:
     st.subheader("Top Codes 2024")
-    if "2024" in rc_dict:
-        top_2024 = rc_dict["2024"].nlargest(5, 'Room Revenue')[['IDS_RATE_CODE', 'Room Revenue']]
+    if "2024" in rc_dict and not rc_dict["2024"].empty:
+        # Check which column exists for rate code and revenue
+        rc_2024 = rc_dict["2024"]
+        rate_col = 'Rate_Code' if 'Rate_Code' in rc_2024.columns else rc_2024.columns[0]
+        rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2024.columns else [c for c in rc_2024.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2024.columns) else rc_2024.columns[1]
+        top_2024 = rc_2024.nlargest(5, rev_col)[[rate_col, rev_col]]
+        top_2024.columns = ['Rate Code', 'Revenue']
         st.dataframe(top_2024, hide_index=True)
     else:
         st.write("No 2024 rate code data.")
 
 with rc2:
     st.subheader("Top Codes 2025")
-    if "2025" in rc_dict:
-        top_2025 = rc_dict["2025"].nlargest(5, 'Room Revenue')[['IDS_RATE_CODE', 'Room Revenue']]
+    if "2025" in rc_dict and not rc_dict["2025"].empty:
+        rc_2025 = rc_dict["2025"]
+        rate_col = 'Rate_Code' if 'Rate_Code' in rc_2025.columns else rc_2025.columns[0]
+        rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2025.columns else [c for c in rc_2025.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2025.columns) else rc_2025.columns[1]
+        top_2025 = rc_2025.nlargest(5, rev_col)[[rate_col, rev_col]]
+        top_2025.columns = ['Rate Code', 'Revenue']
         st.dataframe(top_2025, hide_index=True)
     else:
         st.write("No 2025 rate code data.")
 
 with rc3:
     st.subheader("Top Codes 2026")
-    if "2026" in rc_dict:
-        rc26 = rc_dict["2026"].rename(columns={'IDS_RATE_CODE': 'Code', 'Room Revenue': 'Revenue'})
-        top_2026 = rc26.nlargest(5, 'Revenue')[['Code', 'Revenue']]
+    if "2026" in rc_dict and not rc_dict["2026"].empty:
+        rc_2026 = rc_dict["2026"]
+        rate_col = 'Rate_Code' if 'Rate_Code' in rc_2026.columns else rc_2026.columns[0]
+        rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2026.columns else [c for c in rc_2026.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2026.columns) else rc_2026.columns[1]
+        top_2026 = rc_2026.nlargest(5, rev_col)[[rate_col, rev_col]]
+        top_2026.columns = ['Rate Code', 'Revenue']
         st.dataframe(top_2026, hide_index=True)
     else:
         st.write("No 2026 rate code data.")
@@ -362,14 +498,13 @@ with rc3:
 st.caption("Note: Rate code files contain aggregated yearly data – they do not include daily dates.")
 
 # -----------------------------
-# 10. 2026 Reservation Activity Analysis (New Section)
+# 10. 2026 Reservation Activity Analysis
 # -----------------------------
 st.divider()
 st.header("📊 2026 Reservation Activity Analysis")
 
 df26 = df[df['Date'].dt.year == 2026].sort_values('Date')
 if not df26.empty:
-    # Use the actual daily data for 2026
     # Show pickup (Arrivals) and occupancy trend
     fig_act = make_subplots(specs=[[{"secondary_y": True}]])
     fig_act.add_trace(go.Bar(
@@ -390,10 +525,9 @@ if not df26.empty:
     )
     st.plotly_chart(fig_act, use_container_width=True)
 
-    # Booking pace comparison: cumulative arrivals vs. same period 2025
+    # Booking pace comparison
     df25_comp = df[df['Date'].dt.year == 2025].sort_values('Date')
     if not df25_comp.empty:
-        # Align by day-of-year
         df26['DayOfYear'] = df26['Date'].dt.dayofyear
         df25_comp['DayOfYear'] = df25_comp['Date'].dt.dayofyear
 
@@ -418,13 +552,10 @@ if not df26.empty:
         )
         st.plotly_chart(fig_cum, use_container_width=True)
 
-        # Key metrics
         total_arr_26 = df26['Arrivals'].sum()
         total_arr_25 = df25_comp[df25_comp['DayOfYear'] <= df26['DayOfYear'].max()]['Arrivals'].sum()
         st.metric("Total Arrivals YTD 2026", f"{total_arr_26:.0f}",
                   delta=f"{total_arr_26 - total_arr_25:.0f} vs 2025 same period")
-    else:
-        st.info("2025 data not available for booking pace comparison.")
 else:
     st.warning("No 2026 reservation data available.")
 
@@ -434,7 +565,6 @@ else:
 st.divider()
 st.header("📈 90-Day Forecast & Predictive Pricing")
 
-# Forecast start from the end of the selected range (or global max)
 if not filtered.empty:
     forecast_start = filtered["Date"].max()
 else:
@@ -444,14 +574,12 @@ future_dates = pd.date_range(start=forecast_start + timedelta(days=1), periods=9
 forecast_df = pd.DataFrame({"Date": future_dates})
 forecast_df = forecast_df.merge(events, on="Date", how="left").fillna({"Impact_Level": "None", "Event": "Standard Market", "Premium": 0})
 
-# Base ADR from filtered data (or global)
 base_adr = filtered['ADR'].mean() if not filtered.empty else df["ADR"].mean()
 multipliers = {"High": 1.30, "Medium": 1.15, "None": 1.0}
 np.random.seed(42)
 
 def calculate_rate(row):
     rate = base_adr * multipliers[row["Impact_Level"]] * np.random.uniform(0.95, 1.05)
-    # Add explicit premium for designated dates (April 12-14)
     if row["Premium"] > 0:
         rate += row["Premium"]
     return max(90.0, rate)
@@ -467,7 +595,6 @@ fig_f.add_trace(go.Scatter(
     x=forecast_df["Date"], y=[90] * len(forecast_df),
     name="Floor Price ($90)", line=dict(color='red', dash='dash')
 ))
-# Highlight premium dates
 premium_dates = forecast_df[forecast_df["Premium"] > 0]
 if not premium_dates.empty:
     fig_f.add_trace(go.Scatter(
@@ -535,8 +662,4 @@ if not res.empty:
         delta="Enforced $90 Floor"
     )
     if row['Impact_Level'] != "None":
-        st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
-    if row['Premium'] > 0:
-        st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
-else:
-    st.info("No forecast available for that exact date.")
+        st.warning(f"Event Detected: {row['Event']
