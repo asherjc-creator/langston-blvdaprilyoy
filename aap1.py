@@ -12,7 +12,6 @@ from io import BytesIO
 from PIL import Image
 from datetime import datetime, timedelta
 import os
-import random
 
 # -----------------------------
 # 1. Helper Functions
@@ -57,7 +56,6 @@ def get_rate_mapping(file_path):
     try:
         df_raw = pd.read_csv(file_path, header=None)
         
-        # Category mapping based on column positions
         col_to_cat = {
             0: "Group",
             1: "Wholesale",
@@ -71,7 +69,6 @@ def get_rate_mapping(file_path):
         mapping = {}
         for col_idx, cat_name in col_to_cat.items():
             if col_idx < len(df_raw.columns):
-                # Start from row 4 (after headers)
                 codes = df_raw.iloc[4:, col_idx].dropna().tolist()
                 for code in codes:
                     code_clean = str(code).strip()
@@ -86,19 +83,15 @@ def generate_competitor_data(hotel_name, base_adr, volatility=0.15):
     """Generate synthetic competitor rate data for 2026."""
     dates = pd.date_range(start="2026-01-01", end="2026-12-31", freq='D')
     
-    # Seasonal pattern
     seasonal = 1 + 0.2 * np.sin(2 * np.pi * (dates.dayofyear - 90) / 365)
-    
-    # Weekend premium
     weekend_premium = np.where(dates.dayofweek >= 5, 1.15, 1.0)
     
-    # Random walk with volatility
     np.random.seed(hash(hotel_name) % 10000)
     random_walk = 1 + np.cumsum(np.random.normal(0, volatility/30, len(dates)))
     random_walk = random_walk / random_walk[0]
     
     rates = base_adr * seasonal * weekend_premium * random_walk
-    rates = np.maximum(rates, 65)  # Floor rate
+    rates = np.maximum(rates, 65)
     
     return pd.DataFrame({
         'Date': dates,
@@ -140,13 +133,6 @@ st.markdown("""
     font-weight: bold;
     margin-bottom: 20px;
 }
-.benchmark-highlight {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 8px 15px;
-    border-radius: 20px;
-    font-weight: bold;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -155,10 +141,8 @@ st.markdown("""
 # -----------------------------
 @st.cache_data
 def load_all_data():
-    # Load Rate Code Mapping
     rate_mapping = get_rate_mapping("my codes.csv")
     
-    # A. Load Historical KPI Data (2023-2026)
     kpi_files = {
         "2023": "ECONO - 2023.csv",
         "2024": "ECONO - 2024.csv",
@@ -193,7 +177,6 @@ def load_all_data():
         )
         full_df['Lat'], full_df['Lon'] = 38.8856, -77.1664
 
-    # B. Load Rate Code Files with Category Mapping
     rc_files = {
         "2024": "Rate code 2024.csv",
         "2025": "Rate code 2025.csv",
@@ -207,7 +190,6 @@ def load_all_data():
             temp_rc = pd.read_csv(path)
             temp_rc.columns = [c.strip().strip('"') for c in temp_rc.columns]
             
-            # Identify the ID column
             id_col = None
             for col in temp_rc.columns:
                 if col.upper() in ['RATE CODE', 'IDS_RATE_CODE', 'RATE_CODE']:
@@ -216,16 +198,13 @@ def load_all_data():
             if id_col is None:
                 id_col = temp_rc.columns[0]
             
-            # Clean numeric columns
             for col in temp_rc.columns:
                 if col != id_col:
                     temp_rc[col] = temp_rc[col].apply(clean_value)
             
-            # Add category
             temp_rc['Category'] = temp_rc[id_col].map(rate_mapping).fillna('Other/Uncategorized')
             temp_rc['Year'] = int(year)
             
-            # Standardize column names
             rename_dict = {id_col: 'Rate_Code'}
             for col in temp_rc.columns:
                 if 'Room Revenue' in col:
@@ -239,7 +218,6 @@ def load_all_data():
     
     all_rc = pd.concat(all_rc_list, ignore_index=True) if all_rc_list else pd.DataFrame()
 
-    # C. Generate Yearly Summary
     yearly_summary = pd.DataFrame()
     if not full_df.empty:
         yearly_summary = full_df.groupby('Year').agg({
@@ -251,7 +229,6 @@ def load_all_data():
         yearly_summary['ADR'] = (yearly_summary['Room_Revenue'] / yearly_summary['Rooms_Sold']).round(2)
         yearly_summary['RevPAR'] = (yearly_summary['Room_Revenue'] / yearly_summary['Total_Rooms']).round(2)
 
-    # D. Category Summary
     cat_summary = pd.DataFrame()
     if not all_rc.empty:
         if 'Room_Revenue' in all_rc.columns and 'Room_Nights' in all_rc.columns:
@@ -261,7 +238,6 @@ def load_all_data():
             }).reset_index()
             cat_summary = cat_summary.sort_values(['Year', 'Room_Revenue'], ascending=[True, False])
 
-    # E. Events with Premium Dates
     events = pd.DataFrame({
         "Date": pd.to_datetime([
             "2026-04-12", "2026-04-13", "2026-04-14",
@@ -279,7 +255,6 @@ def load_all_data():
         "Premium": [200, 200, 200, 0, 0, 0]
     })
 
-    # F. Generate Competitor Data for 2026
     competitors = {
         "Econo Lodge Metro Arlington": 95,
         "Comfort Inn Ballston": 115,
@@ -306,6 +281,7 @@ df, rc_dict, all_rc, yearly_summary, cat_summary, rate_mapping, events, competit
 # -----------------------------
 asher_pic_base64 = get_image_base64("asher_picture.png")
 github_url = "https://github.com/asherjc-creator/econo-revenue-dashboard"
+email = "asher.charles@icloud.com"
 
 with st.sidebar:
     if asher_pic_base64:
@@ -315,10 +291,19 @@ with st.sidebar:
         )
     st.markdown("## Asher Jannu")
     st.markdown("### **Revenue Analyst**")
-    st.markdown(
-        f'<a href="{github_url}" target="_blank"><button style="background-color: #24292e; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%;">View GitHub Code</button></a>',
-        unsafe_allow_html=True
-    )
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(
+            f'<a href="{github_url}" target="_blank"><button style="background-color: #24292e; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%;">GitHub</button></a>',
+            unsafe_allow_html=True
+        )
+    with col2:
+        st.markdown(
+            f'<a href="mailto:{email}"><button style="background-color: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%;">Email</button></a>',
+            unsafe_allow_html=True
+        )
+    
     st.markdown("---")
     st.header("Control Panel")
     if not df.empty:
@@ -339,7 +324,6 @@ with st.sidebar:
         start_date = end_date = datetime.today()
     st.info("Configured Lower Limit: **$90.00**")
     
-    # Show mapping stats
     if rate_mapping:
         st.markdown("---")
         st.caption(f"✅ Rate mapping: {len(rate_mapping)} codes")
@@ -376,7 +360,6 @@ if not yearly_summary.empty:
                 delta=f"{row['Occupancy%']:.1f}% Occ | ${row['ADR']:.0f} ADR"
             )
 
-# Current period KPIs
 if not filtered.empty:
     st.write("### 📈 Selected Period KPIs")
     k1, k2, k3, k4 = st.columns(4)
@@ -386,22 +369,19 @@ if not filtered.empty:
     k4.metric("Total Revenue", f"${filtered['Room_Revenue'].sum():,.0f}")
 
 # -----------------------------
-# 7. Competitor Rate Benchmarking 2026 (NEW SECTION)
+# 7. Competitor Rate Benchmarking 2026
 # -----------------------------
 st.divider()
 st.header("🏨 Competitor Rate Benchmarking - 2026")
 st.caption("5-Mile Radius | Arlington, VA Market")
 
-# Filter for 2026 data
 comp_2026 = competitor_df[competitor_df['Date'].dt.year == 2026].copy()
 
 if not comp_2026.empty:
-    # Monthly average by competitor
     comp_2026['Month'] = comp_2026['Date'].dt.to_period('M')
     monthly_comp = comp_2026.groupby(['Month', 'Hotel'])['Rate'].mean().reset_index()
     monthly_comp['Month_Date'] = monthly_comp['Month'].dt.to_timestamp()
     
-    # Main comparison chart
     fig_comp = px.line(
         monthly_comp,
         x='Month_Date',
@@ -414,26 +394,22 @@ if not comp_2026.empty:
     fig_comp.update_layout(height=450, hovermode='x unified')
     st.plotly_chart(fig_comp, use_container_width=True)
     
-    # Competitor ranking and positioning
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("📊 Market Positioning")
-        # Average rates by hotel for 2026
         avg_rates = comp_2026.groupby('Hotel')['Rate'].agg(['mean', 'min', 'max']).round(0)
         avg_rates = avg_rates.sort_values('mean', ascending=False)
         avg_rates.columns = ['Avg Rate', 'Min Rate', 'Max Rate']
         
-        # Highlight Econo Lodge
         def highlight_econo(val):
-            return 'background-color: #90EE90' if val.name == 'Econo Lodge Metro Arlington' else ''
+            return ['background-color: #90EE90' if val.name == 'Econo Lodge Metro Arlington' else '' for _ in val]
         
         st.dataframe(avg_rates.style.apply(highlight_econo, axis=1), use_container_width=True)
     
     with col2:
         st.subheader("💰 Rate Premium/Discount Analysis")
         
-        # Calculate premium/discount vs market average
         market_avg = comp_2026.groupby('Date')['Rate'].mean().reset_index()
         market_avg.columns = ['Date', 'Market_Avg']
         
@@ -464,7 +440,6 @@ if not comp_2026.empty:
             delta="Below Market Average" if avg_premium < 0 else "Above Market Average"
         )
     
-    # Competitive set summary
     st.subheader("📍 Competitive Set Summary")
     comp_summary = comp_2026.groupby('Hotel').agg({
         'Rate': ['mean', 'std', 'count']
@@ -488,7 +463,6 @@ if not comp_2026.empty:
                   f"${comp_summary['Avg Rate'].max() - econo_rate:.0f}",
                   "Opportunity for rate growth")
     
-    # Weekend vs Weekday analysis
     st.subheader("📅 Weekend vs Weekday Rate Comparison")
     comp_2026['Is_Weekend'] = comp_2026['Date'].dt.dayofweek >= 5
     weekend_comp = comp_2026.groupby(['Hotel', 'Is_Weekend'])['Rate'].mean().reset_index()
@@ -759,4 +733,26 @@ with h2:
         [38.8856, -77.1664],
         popup="Econo Lodge Arlington",
         icon=folium.Icon(color="blue")
-   
+    ).add_to(m_heat)
+    st_folium(m_heat, width=600, height=350)
+
+# -----------------------------
+# 14. AI Engine Query
+# -----------------------------
+st.write("---")
+st.write("### 🤖 AI Pricing Recommendation Engine")
+check_date = st.date_input(
+    "Query a Specific Future Date:",
+    forecast_start + timedelta(days=14),
+    min_value=forecast_start.date()
+)
+res = forecast_df[forecast_df["Date"] == pd.to_datetime(check_date)]
+if not res.empty:
+    row = res.iloc[0]
+    st.metric(
+        f"Recommended ADR: {check_date}",
+        f"${row['Suggested_Rate']:.2f}",
+        delta="Enforced $90 Floor"
+    )
+    if row['Impact_Level'] != "None":
+        st.warning(f"Event
