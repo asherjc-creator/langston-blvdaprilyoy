@@ -448,41 +448,127 @@ rc1, rc2, rc3 = st.columns(3)
 with rc1:
     st.subheader("Top Codes 2024")
     if "2024" in rc_dict and not rc_dict["2024"].empty:
-        rc_2024 = rc_dict["2024"]
-        rate_col = 'Rate_Code' if 'Rate_Code' in rc_2024.columns else rc_2024.columns[0]
-        rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2024.columns else [c for c in rc_2024.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2024.columns) else rc_2024.columns[1]
-        top_2024 = rc_2024.nlargest(5, rev_col)[[rate_col, rev_col]]
-        top_2024.columns = ['Rate Code', 'Revenue']
-        st.dataframe(top_2024, hide_index=True)
+        try:
+            rc_2024 = rc_dict["2024"].copy()
+            # Find rate code column
+            rate_col = None
+            for col in rc_2024.columns:
+                if 'Rate_Code' in col or 'RATE' in col.upper() or 'CODE' in col.upper():
+                    rate_col = col
+                    break
+            if rate_col is None:
+                rate_col = rc_2024.columns[0]
+            
+            # Find revenue column
+            rev_col = None
+            for col in rc_2024.columns:
+                if 'Revenue' in col and 'Room' in col:
+                    rev_col = col
+                    break
+            if rev_col is None:
+                for col in rc_2024.columns:
+                    if 'Revenue' in col:
+                        rev_col = col
+                        break
+            if rev_col is None:
+                rev_col = rc_2024.columns[1] if len(rc_2024.columns) > 1 else rc_2024.columns[0]
+            
+            # Ensure revenue column is numeric
+            rc_2024[rev_col] = pd.to_numeric(rc_2024[rev_col], errors='coerce').fillna(0)
+            
+            # Get top 5
+            top_2024 = rc_2024.nlargest(5, rev_col)[[rate_col, rev_col]].copy()
+            top_2024.columns = ['Rate Code', 'Revenue']
+            top_2024['Revenue'] = top_2024['Revenue'].apply(lambda x: f"${x:,.0f}")
+            st.dataframe(top_2024, hide_index=True)
+        except Exception as e:
+            st.write("Error loading 2024 rate codes")
     else:
         st.write("No 2024 rate code data.")
 
 with rc2:
     st.subheader("Top Codes 2025")
     if "2025" in rc_dict and not rc_dict["2025"].empty:
-        rc_2025 = rc_dict["2025"]
-        rate_col = 'Rate_Code' if 'Rate_Code' in rc_2025.columns else rc_2025.columns[0]
-        rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2025.columns else [c for c in rc_2025.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2025.columns) else rc_2025.columns[1]
-        top_2025 = rc_2025.nlargest(5, rev_col)[[rate_col, rev_col]]
-        top_2025.columns = ['Rate Code', 'Revenue']
-        st.dataframe(top_2025, hide_index=True)
+        try:
+            rc_2025 = rc_dict["2025"].copy()
+            # Find rate code column
+            rate_col = None
+            for col in rc_2025.columns:
+                if 'Rate_Code' in col or 'RATE' in col.upper() or 'CODE' in col.upper():
+                    rate_col = col
+                    break
+            if rate_col is None:
+                rate_col = rc_2025.columns[0]
+            
+            # Find revenue column
+            rev_col = None
+            for col in rc_2025.columns:
+                if 'Revenue' in col and 'Room' in col:
+                    rev_col = col
+                    break
+            if rev_col is None:
+                for col in rc_2025.columns:
+                    if 'Revenue' in col:
+                        rev_col = col
+                        break
+            if rev_col is None:
+                rev_col = rc_2025.columns[1] if len(rc_2025.columns) > 1 else rc_2025.columns[0]
+            
+            # Ensure revenue column is numeric
+            rc_2025[rev_col] = pd.to_numeric(rc_2025[rev_col], errors='coerce').fillna(0)
+            
+            # Get top 5
+            top_2025 = rc_2025.nlargest(5, rev_col)[[rate_col, rev_col]].copy()
+            top_2025.columns = ['Rate Code', 'Revenue']
+            top_2025['Revenue'] = top_2025['Revenue'].apply(lambda x: f"${x:,.0f}")
+            st.dataframe(top_2025, hide_index=True)
+        except Exception as e:
+            st.write("Error loading 2025 rate codes")
     else:
         st.write("No 2025 rate code data.")
 
 with rc3:
     st.subheader("Top Codes 2026")
     if "2026" in rc_dict and not rc_dict["2026"].empty:
-        rc_2026 = rc_dict["2026"]
-        rate_col = 'Rate_Code' if 'Rate_Code' in rc_2026.columns else rc_2026.columns[0]
-        rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2026.columns else [c for c in rc_2026.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2026.columns) else rc_2026.columns[1]
-        top_2026 = rc_2026.nlargest(5, rev_col)[[rate_col, rev_col]]
-        top_2026.columns = ['Rate Code', 'Revenue']
-        st.dataframe(top_2026, hide_index=True)
+        try:
+            rc_2026 = rc_dict["2026"].copy()
+            # Find rate code column
+            rate_col = None
+            for col in rc_2026.columns:
+                if 'Rate_Code' in col or 'RATE' in col.upper() or 'CODE' in col.upper():
+                    rate_col = col
+                    break
+            if rate_col is None:
+                rate_col = rc_2026.columns[0]
+            
+            # Find revenue column
+            rev_col = None
+            for col in rc_2026.columns:
+                if 'Revenue' in col and 'Room' in col:
+                    rev_col = col
+                    break
+            if rev_col is None:
+                for col in rc_2026.columns:
+                    if 'Revenue' in col:
+                        rev_col = col
+                        break
+            if rev_col is None:
+                rev_col = rc_2026.columns[1] if len(rc_2026.columns) > 1 else rc_2026.columns[0]
+            
+            # Ensure revenue column is numeric
+            rc_2026[rev_col] = pd.to_numeric(rc_2026[rev_col], errors='coerce').fillna(0)
+            
+            # Get top 5
+            top_2026 = rc_2026.nlargest(5, rev_col)[[rate_col, rev_col]].copy()
+            top_2026.columns = ['Rate Code', 'Revenue']
+            top_2026['Revenue'] = top_2026['Revenue'].apply(lambda x: f"${x:,.0f}")
+            st.dataframe(top_2026, hide_index=True)
+        except Exception as e:
+            st.write("Error loading 2026 rate codes")
     else:
         st.write("No 2026 rate code data.")
 
 st.caption("Note: Rate code files contain aggregated yearly data – they do not include daily dates.")
-
 # -----------------------------
 # 10. 2026 Reservation Activity Analysis
 # -----------------------------
