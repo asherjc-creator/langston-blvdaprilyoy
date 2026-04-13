@@ -130,7 +130,7 @@ def load_all_data():
             temp_rc = pd.read_csv(path)
             temp_rc.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in temp_rc.columns]
             
-            # Standardize column names - handle both "IDS_RATE_CODE" and "RATE CODE"
+            # Standardize column names
             rename_map = {}
             for col in temp_rc.columns:
                 if col.upper() in ['IDS_RATE_CODE', 'RATE CODE', 'RATE_CODE']:
@@ -141,10 +141,6 @@ def load_all_data():
                     rename_map[col] = 'Room_Nights'
                 elif 'AVG' in col.upper() or 'DAILY AVG' in col.upper():
                     rename_map[col] = 'Daily_Avg'
-                elif '%ROOM NIGHTS' in col.upper() or '%ROOM' in col.upper():
-                    rename_map[col] = 'Pct_Room_Nights'
-                elif '%ROOM REVENUE' in col.upper() or '%REVENUE' in col.upper():
-                    rename_map[col] = 'Pct_Room_Revenue'
             
             if rename_map:
                 temp_rc.rename(columns=rename_map, inplace=True)
@@ -461,7 +457,6 @@ rc1, rc2, rc3 = st.columns(3)
 with rc1:
     st.subheader("Top Codes 2024")
     if "2024" in rc_dict and not rc_dict["2024"].empty:
-        # Check which column exists for rate code and revenue
         rc_2024 = rc_dict["2024"]
         rate_col = 'Rate_Code' if 'Rate_Code' in rc_2024.columns else rc_2024.columns[0]
         rev_col = 'Room_Revenue' if 'Room_Revenue' in rc_2024.columns else [c for c in rc_2024.columns if 'Revenue' in c][0] if any('Revenue' in c for c in rc_2024.columns) else rc_2024.columns[1]
@@ -662,4 +657,8 @@ if not res.empty:
         delta="Enforced $90 Floor"
     )
     if row['Impact_Level'] != "None":
-        st.warning(f"Event Detected: {row['Event']
+        st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
+    if row['Premium'] > 0:
+        st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
+else:
+    st.info("No forecast available for that exact date.")
