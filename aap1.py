@@ -327,7 +327,7 @@ with st.sidebar:
     if rate_mapping:
         st.markdown("---")
         st.caption(f"✅ Rate mapping: {len(rate_mapping)} codes")
-        st.caption(f"📊 Competitors tracked: 7 hotels")
+        st.caption("📊 Competitors tracked: 7 hotels")
 
 # -----------------------------
 # 5. Header Section
@@ -401,11 +401,7 @@ if not comp_2026.empty:
         avg_rates = comp_2026.groupby('Hotel')['Rate'].agg(['mean', 'min', 'max']).round(0)
         avg_rates = avg_rates.sort_values('mean', ascending=False)
         avg_rates.columns = ['Avg Rate', 'Min Rate', 'Max Rate']
-        
-        def highlight_econo(val):
-            return ['background-color: #90EE90' if val.name == 'Econo Lodge Metro Arlington' else '' for _ in val]
-        
-        st.dataframe(avg_rates.style.apply(highlight_econo, axis=1), use_container_width=True)
+        st.dataframe(avg_rates, use_container_width=True)
     
     with col2:
         st.subheader("💰 Rate Premium/Discount Analysis")
@@ -755,4 +751,8 @@ if not res.empty:
         delta="Enforced $90 Floor"
     )
     if row['Impact_Level'] != "None":
-        st.warning(f"Event
+        st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
+    if row['Premium'] > 0:
+        st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
+else:
+   
