@@ -29,8 +29,8 @@ def get_image_base64(image_path):
         pass
     return ""
 
-def clean_numeric(val):
-    """Strips currency symbols, commas, and handles non-numeric characters."""
+def clean_value(val):
+    """Cleans currency, commas, percentages, and special characters from data."""
     if val is None:
         return 0.0
     try:
@@ -40,13 +40,43 @@ def clean_numeric(val):
             return 0.0
     except:
         pass
-    try:
-        val = str(val).replace(',', '').replace('$', '').replace('"', '').strip()
-        if val in ['∞', '', 'nan', 'None']:
-            return 0.0
-        return float(val)
-    except:
+    val_str = str(val).replace(',', '').replace('$', '').replace('%', '').replace('"', '').strip()
+    if val_str in ['∞', '', 'nan', 'None', '?']:
         return 0.0
+    try:
+        return float(val_str)
+    except ValueError:
+        return 0.0
+
+def get_rate_mapping(file_path):
+    """Maps rate codes to their respective categories."""
+    if not os.path.exists(file_path):
+        return {}
+    
+    try:
+        df_raw = pd.read_csv(file_path, header=None)
+        col_to_cat = {
+            0: "Group", 
+            1: "Wholesale", 
+            2: "Opaque", 
+            3: "Advance Purchase", 
+            4: "Promotion", 
+            28: "OTA Bundle Package", 
+            30: "Locked/Other"
+        }
+        
+        mapping = {}
+        for col_idx, cat_name in col_to_cat.items():
+            if col_idx < len(df_raw.columns):
+                codes = df_raw.iloc[4:, col_idx].dropna().tolist()
+                for code in codes:
+                    code_clean = str(code).strip()
+                    if code_clean:
+                        mapping[code_clean] = cat_name
+        return mapping
+    except Exception as e:
+        st.warning(f"Could not load rate mapping: {e}")
+        return {}
 
 # -----------------------------
 # 2. Page Configuration & Styling
@@ -83,6 +113,13 @@ st.markdown("""
     font-weight: bold;
     margin-bottom: 20px;
 }
+.category-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -91,6 +128,9 @@ st.markdown("""
 # -----------------------------
 @st.cache_data
 def load_all_data():
+    # Load Rate Code Mapping
+    rate_mapping = get_rate_mapping("my codes.csv")
+    
     # A. Load Historical KPI Data (2023-2026)
     kpi_files = {
         "2023": "ECONO - 2023.csv",
@@ -102,6 +142,7 @@ def load_all_data():
     for year, file in kpi_files.items():
         if os.path.exists(file):
             temp = pd.read_csv(file)
+            temp.columns = [c.strip() for c in temp.columns]
             temp.rename(columns={
                 'IDS_DATE': 'Date',
                 'RoomRev': 'Room_Revenue',
@@ -112,7 +153,7 @@ def load_all_data():
             temp = temp.dropna(subset=['Date'])
             for col in ['Room_Revenue', 'ADR', 'RevPAR', 'Rooms_Sold', 'Total_Rooms']:
                 if col in temp.columns:
-                    temp[col] = temp[col].apply(clean_numeric)
+                    temp[col] = temp[col].apply(clean_value)
             temp['Year'] = int(year)
             df_list.append(temp)
 
@@ -125,38 +166,72 @@ def load_all_data():
         )
         full_df['Lat'], full_df['Lon'] = 38.8856, -77.1664
 
-    # B. Load Rate Code Files (CSV)
+    # B. Load Rate Code Files with Category Mapping
     rc_files = {
         "2024": "Rate code 2024.csv",
         "2025": "Rate code 2025.csv",
         "2026": "Rate code 2026.csv"
     }
     rc_data = {}
+    all_rc_list = []
+    
     for year, path in rc_files.items():
         if os.path.exists(path):
             temp_rc = pd.read_csv(path)
-            temp_rc.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in temp_rc.columns]
+            temp_rc.columns = [c.strip().strip('"') for c in temp_rc.columns]
             
-            rename_map = {}
+            # Identify the ID column
+            id_col = None
             for col in temp_rc.columns:
-                if col.upper() in ['IDS_RATE_CODE', 'RATE CODE', 'RATE_CODE']:
-                    rename_map[col] = 'Rate_Code'
-                elif 'ROOM REVENUE' in col.upper() or col.upper() == 'REVENUE':
-                    rename_map[col] = 'Room_Revenue'
-                elif 'ROOM NIGHTS' in col.upper() or col.upper() == 'NIGHTS':
-                    rename_map[col] = 'Room_Nights'
-                elif 'AVG' in col.upper() or 'DAILY AVG' in col.upper():
-                    rename_map[col] = 'Daily_Avg'
+                if col.upper() in ['RATE CODE', 'IDS_RATE_CODE', 'RATE_CODE']:
+                    id_col = col
+                    break
+            if id_col is None:
+                id_col = temp_rc.columns[0]
             
-            if rename_map:
-                temp_rc.rename(columns=rename_map, inplace=True)
-            
+            # Clean numeric columns
             for col in temp_rc.columns:
-                if any(x in col for x in ['Revenue', 'AVG', 'Nights']):
-                    temp_rc[col] = temp_rc[col].map(clean_numeric)
+                if col != id_col:
+                    temp_rc[col] = temp_rc[col].apply(clean_value)
+            
+            # Add category
+            temp_rc['Category'] = temp_rc[id_col].map(rate_mapping).fillna('Other/Uncategorized')
+            temp_rc['Year'] = int(year)
+            
+            # Standardize column names
+            temp_rc.rename(columns={
+                id_col: 'Rate_Code',
+                'Room Revenue': 'Room_Revenue',
+                'Room Nights': 'Room_Nights'
+            }, inplace=True)
+            
             rc_data[year] = temp_rc
+            all_rc_list.append(temp_rc)
+    
+    all_rc = pd.concat(all_rc_list, ignore_index=True) if all_rc_list else pd.DataFrame()
 
-    # C. Events with Premium Dates
+    # C. Generate Yearly Summary
+    yearly_summary = pd.DataFrame()
+    if not full_df.empty:
+        yearly_summary = full_df.groupby('Year').agg({
+            'Room_Revenue': 'sum',
+            'Rooms_Sold': 'sum',
+            'Total_Rooms': 'sum'
+        }).reset_index()
+        yearly_summary['Occupancy%'] = (yearly_summary['Rooms_Sold'] / yearly_summary['Total_Rooms'] * 100).round(2)
+        yearly_summary['ADR'] = (yearly_summary['Room_Revenue'] / yearly_summary['Rooms_Sold']).round(2)
+        yearly_summary['RevPAR'] = (yearly_summary['Room_Revenue'] / yearly_summary['Total_Rooms']).round(2)
+
+    # D. Category Summary
+    cat_summary = pd.DataFrame()
+    if not all_rc.empty:
+        cat_summary = all_rc.groupby(['Year', 'Category']).agg({
+            'Room_Revenue': 'sum',
+            'Room_Nights': 'sum'
+        }).reset_index()
+        cat_summary = cat_summary.sort_values(['Year', 'Room_Revenue'], ascending=[True, False])
+
+    # E. Events with Premium Dates
     events = pd.DataFrame({
         "Date": pd.to_datetime([
             "2026-04-12", "2026-04-13", "2026-04-14",
@@ -174,9 +249,9 @@ def load_all_data():
         "Premium": [200, 200, 200, 0, 0, 0]
     })
 
-    return full_df, rc_data, events
+    return full_df, rc_data, all_rc, yearly_summary, cat_summary, rate_mapping, events
 
-df, rc_dict, events = load_all_data()
+df, rc_dict, all_rc, yearly_summary, cat_summary, rate_mapping, events = load_all_data()
 
 # -----------------------------
 # 4. Sidebar Profile & Control
@@ -215,6 +290,11 @@ with st.sidebar:
         filtered = pd.DataFrame()
         start_date = end_date = datetime.today()
     st.info("Configured Lower Limit: **$90.00**")
+    
+    # Show mapping stats
+    if rate_mapping:
+        st.markdown("---")
+        st.caption(f"✅ Rate mapping loaded: {len(rate_mapping)} codes categorized")
 
 # -----------------------------
 # 5. Header Section
@@ -234,39 +314,85 @@ st.markdown(
 )
 
 # -----------------------------
-# 6. KPI Row & Historical Comparison
+# 6. Yearly Performance Summary KPI Row
 # -----------------------------
+st.write("### 📊 Yearly Performance Summary")
+if not yearly_summary.empty:
+    # Display as metrics
+    cols = st.columns(len(yearly_summary))
+    for i, (_, row) in enumerate(yearly_summary.iterrows()):
+        with cols[i]:
+            st.metric(
+                f"{int(row['Year'])}",
+                f"${row['Room_Revenue']:,.0f}",
+                delta=f"{row['Occupancy%']:.1f}% Occ | ${row['ADR']:.0f} ADR"
+            )
+
+# Current period KPIs
 if not filtered.empty:
+    st.write("### 📈 Selected Period KPIs")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Average ADR", f"${filtered['ADR'].mean():.2f}")
     k2.metric("Occupancy", f"{filtered['Occupancy'].mean()*100:.1f}%")
     k3.metric("RevPAR", f"${filtered['RevPAR'].mean():.2f}")
-    k4.metric("Market Share (RGI)", "92.4")
-
-st.write("### 📅 April Performance Comparison (2024-2026)")
-apr_rows = []
-for y in [2024, 2025, 2026]:
-    m_df = df[(df['Date'].dt.year == y) & (df['Date'].dt.month == 4)]
-    if not m_df.empty:
-        total_rev = m_df['Room_Revenue'].sum()
-        total_rooms_sold = m_df['Rooms_Sold'].sum()
-        total_rooms = m_df['Total_Rooms'].sum()
-        adr = total_rev / total_rooms_sold if total_rooms_sold > 0 else 0
-        occ = (total_rooms_sold / total_rooms) * 100 if total_rooms > 0 else 0
-        revpar = total_rev / total_rooms if total_rooms > 0 else 0
-        apr_rows.append({
-            "Year": f"April {y}",
-            "ADR": f"${adr:.2f}",
-            "Occupancy": f"{occ:.1f}%",
-            "RevPAR": f"${revpar:.2f}"
-        })
-if apr_rows:
-    st.table(pd.DataFrame(apr_rows))
-else:
-    st.info("No April data available for comparison.")
+    k4.metric("Total Revenue", f"${filtered['Room_Revenue'].sum():,.0f}")
 
 # -----------------------------
-# 7. 2025 Gap Analysis: ADR vs RevPAR
+# 7. Rate Category Analysis (New Section)
+# -----------------------------
+st.divider()
+st.header("📂 Rate Category Performance Analysis")
+
+if not cat_summary.empty:
+    # Category trend over years
+    cat_pivot = cat_summary.pivot_table(
+        index='Category', 
+        columns='Year', 
+        values='Room_Revenue', 
+        aggfunc='sum',
+        fill_value=0
+    )
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Stacked bar chart for category contribution
+        fig_cat = px.bar(
+            cat_summary, 
+            x='Year', 
+            y='Room_Revenue', 
+            color='Category',
+            title="Revenue by Rate Category (2024-2026)",
+            labels={'Room_Revenue': 'Revenue ($)'},
+            color_discrete_sequence=px.colors.qualitative.Set2
+        )
+        fig_cat.update_layout(height=400)
+        st.plotly_chart(fig_cat, use_container_width=True)
+    
+    with col2:
+        st.subheader("2026 Category Mix")
+        cat_2026 = cat_summary[cat_summary['Year'] == 2026].nlargest(5, 'Room_Revenue')
+        for _, row in cat_2026.iterrows():
+            st.metric(
+                row['Category'], 
+                f"${row['Room_Revenue']:,.0f}",
+                delta=f"{row['Room_Nights']:.0f} nights"
+            )
+    
+    # Category performance table
+    st.subheader("📋 Detailed Category Breakdown")
+    cat_display = cat_summary.pivot_table(
+        index=['Year', 'Category'], 
+        values=['Room_Revenue', 'Room_Nights'],
+        aggfunc='sum'
+    ).reset_index()
+    cat_display = cat_display.sort_values(['Year', 'Room_Revenue'], ascending=[True, False])
+    cat_display['Room_Revenue'] = cat_display['Room_Revenue'].apply(lambda x: f"${x:,.0f}")
+    cat_display['Room_Nights'] = cat_display['Room_Nights'].apply(lambda x: f"{x:,.0f}")
+    st.dataframe(cat_display, hide_index=True, use_container_width=True)
+
+# -----------------------------
+# 8. 2025 Gap Analysis: ADR vs RevPAR
 # -----------------------------
 st.divider()
 st.header("🔍 2025 Gap Analysis: ADR vs RevPAR")
@@ -329,246 +455,47 @@ if not df25.empty:
     m3.metric("Avg Occupancy 2025", f"{avg_occ_25:.1f}%")
     m4.metric("ADR-RevPAR Gap", f"${gap_25:.2f}")
 
-    st.subheader("📊 2025 Monthly Performance Breakdown")
-    monthly_display = monthly_avg.copy()
-    monthly_display['Month_Str'] = monthly_display['Month'].astype(str)
-    monthly_display['Gap'] = monthly_display['ADR'] - monthly_display['RevPAR']
-    monthly_display['Occupancy_%'] = monthly_display['Occupancy'] * 100
-    
-    display_df = monthly_display[['Month_Str', 'ADR', 'RevPAR', 'Gap', 'Occupancy_%', 'Room_Revenue']].copy()
-    display_df.columns = ['Month', 'ADR', 'RevPAR', 'Gap', 'Occupancy %', 'Room Revenue']
-    for col in ['ADR', 'RevPAR', 'Gap', 'Room Revenue']:
-        display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
-    display_df['Occupancy %'] = display_df['Occupancy %'].apply(lambda x: f"{x:.1f}%")
-    
-    st.dataframe(display_df, hide_index=True, use_container_width=True)
-
     st.markdown(f"""
     ---
     ### 📋 2025 Gap Analysis Observations
     
     **Key Finding**: The average ADR-RevPAR gap in 2025 was **${gap_25:.2f}**, driven by an average occupancy of **{avg_occ_25:.1f}%**.
     
-    **Observation**: The gap between ADR and RevPAR in 2025 indicates that while ADR remained relatively stable, occupancy was not consistently high enough to maximize RevPAR. RevPAR = ADR × Occupancy. A widening gap suggests either:
-    - Discounted or lower‑yielding rate codes were used more frequently.
-    - High‑rated segments did not materialize as expected.
-    - Seasonal demand fluctuations were not fully capitalized upon.
-    
-    **Monthly Patterns**:
-    - **Strongest Months**: The smallest gaps occurred during high-demand periods (typically spring and fall) when both ADR and occupancy were elevated.
-    - **Weakest Months**: Winter months (January-February) and late summer showed the largest gaps, indicating opportunities for occupancy-building strategies.
-    
-    **Potential Missing / Under‑Performing Rate Codes in 2025** (based on rate code analysis):
-    - **Corporate Negotiated (e.g., LEXP, SCPM)** – Room nights were down compared to potential, suggesting corporate travel recovery remains incomplete.
-    - **AAA / AARP (SAARP, SAPR1B)** – These discount segments contributed but at lower ADR levels.
-    - **Group Blocks** – The data shows minimal group pickup, representing a significant revenue opportunity gap.
-    - **Weekend Leisure (SRTL, SBOOK)** – While performing well, there is room to push weekend ADR higher.
+    **Observation**: The gap between ADR and RevPAR in 2025 indicates that while ADR remained relatively stable, occupancy was not consistently high enough to maximize RevPAR.
     
     **Recommendations for 2026**:
-    1. **Push Weekend Rates**: With Cherry Blossom and peak tourism dates, implement +$200 premium pricing as modeled in the forecast.
-    2. **Rebuild Corporate Base**: Target local government contractors and tech firms with negotiated rates that still exceed $90 floor.
-    3. **Group Business Development**: Actively solicit small corporate groups and sports teams to fill shoulder nights.
-    4. **Length-of-Stay Restrictions**: Implement minimum stays on high-demand weekends to maximize revenue per booking.
+    1. **Push Weekend Rates**: With Cherry Blossom and peak tourism dates, implement +$200 premium pricing.
+    2. **Rebuild Corporate Base**: Target local government contractors and tech firms.
+    3. **Group Business Development**: Actively solicit small corporate groups and sports teams.
+    4. **Length-of-Stay Restrictions**: Implement minimum stays on high-demand weekends.
     """)
 
 else:
     st.warning("No 2025 data available for gap analysis.")
 
 # -----------------------------
-# 8. 2025 Year-Over-Year Comparison with 2024
+# 9. Rate Code Analysis - Top Performers
 # -----------------------------
 st.divider()
-st.header("📈 2025 vs 2024 Performance Comparison")
-
-df24_comp = df[df['Date'].dt.year == 2024].copy()
-df25_comp = df[df['Date'].dt.year == 2025].copy()
-
-if not df24_comp.empty and not df25_comp.empty:
-    df24_comp['Month'] = df24_comp['Date'].dt.month
-    df25_comp['Month'] = df25_comp['Date'].dt.month
-    
-    monthly_24 = df24_comp.groupby('Month').agg({
-        'ADR': 'mean',
-        'RevPAR': 'mean',
-        'Occupancy': 'mean',
-        'Room_Revenue': 'sum',
-        'Rooms_Sold': 'sum'
-    }).reset_index()
-    monthly_24['Year'] = 2024
-    
-    monthly_25 = df25_comp.groupby('Month').agg({
-        'ADR': 'mean',
-        'RevPAR': 'mean',
-        'Occupancy': 'mean',
-        'Room_Revenue': 'sum',
-        'Rooms_Sold': 'sum'
-    }).reset_index()
-    monthly_25['Year'] = 2025
-    
-    fig_comp = make_subplots(rows=2, cols=2, subplot_titles=('ADR Comparison', 'RevPAR Comparison', 'Occupancy Comparison', 'Revenue Comparison'))
-    
-    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['ADR'], name='ADR 2024', line=dict(color='#1f77b4')), row=1, col=1)
-    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['ADR'], name='ADR 2025', line=dict(color='#ff7f0e')), row=1, col=1)
-    
-    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['RevPAR'], name='RevPAR 2024', line=dict(color='#1f77b4')), row=1, col=2)
-    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['RevPAR'], name='RevPAR 2025', line=dict(color='#ff7f0e')), row=1, col=2)
-    
-    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['Occupancy']*100, name='Occ % 2024', line=dict(color='#1f77b4')), row=2, col=1)
-    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['Occupancy']*100, name='Occ % 2025', line=dict(color='#ff7f0e')), row=2, col=1)
-    
-    fig_comp.add_trace(go.Scatter(x=monthly_24['Month'], y=monthly_24['Room_Revenue'], name='Revenue 2024', line=dict(color='#1f77b4')), row=2, col=2)
-    fig_comp.add_trace(go.Scatter(x=monthly_25['Month'], y=monthly_25['Room_Revenue'], name='Revenue 2025', line=dict(color='#ff7f0e')), row=2, col=2)
-    
-    fig_comp.update_layout(height=600, showlegend=True, hovermode='x unified')
-    fig_comp.update_xaxes(title_text="Month", row=2, col=1)
-    fig_comp.update_xaxes(title_text="Month", row=2, col=2)
-    fig_comp.update_yaxes(title_text="USD", row=1, col=1)
-    fig_comp.update_yaxes(title_text="USD", row=1, col=2)
-    fig_comp.update_yaxes(title_text="Percent", row=2, col=1)
-    fig_comp.update_yaxes(title_text="USD", row=2, col=2)
-    
-    st.plotly_chart(fig_comp, use_container_width=True)
-    
-    total_rev_24 = df24_comp['Room_Revenue'].sum()
-    total_rev_25 = df25_comp['Room_Revenue'].sum()
-    rev_change = ((total_rev_25 - total_rev_24) / total_rev_24) * 100 if total_rev_24 > 0 else 0
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Revenue 2024", f"${total_rev_24:,.0f}")
-    col2.metric("Total Revenue 2025", f"${total_rev_25:,.0f}", delta=f"{rev_change:.1f}%")
-    col3.metric("Revenue Difference", f"${total_rev_25 - total_rev_24:,.0f}")
-
-# -----------------------------
-# 9. Rate Code Analysis (Yearly Aggregates)
-# -----------------------------
-st.divider()
-st.header("🔑 Performing Rate Codes (Yearly Aggregates – no daily dates)")
+st.header("🔑 Top Performing Rate Codes by Year")
 rc1, rc2, rc3 = st.columns(3)
 
-with rc1:
-    st.subheader("Top Codes 2024")
-    if "2024" in rc_dict and not rc_dict["2024"].empty:
-        try:
-            rc_2024 = rc_dict["2024"].copy()
-            # Find rate code column
-            rate_col = None
-            for col in rc_2024.columns:
-                if 'Rate_Code' in col or 'RATE' in col.upper() or 'CODE' in col.upper():
-                    rate_col = col
-                    break
-            if rate_col is None:
-                rate_col = rc_2024.columns[0]
-            
-            # Find revenue column
-            rev_col = None
-            for col in rc_2024.columns:
-                if 'Revenue' in col and 'Room' in col:
-                    rev_col = col
-                    break
-            if rev_col is None:
-                for col in rc_2024.columns:
-                    if 'Revenue' in col:
-                        rev_col = col
-                        break
-            if rev_col is None:
-                rev_col = rc_2024.columns[1] if len(rc_2024.columns) > 1 else rc_2024.columns[0]
-            
-            # Ensure revenue column is numeric
-            rc_2024[rev_col] = pd.to_numeric(rc_2024[rev_col], errors='coerce').fillna(0)
-            
-            # Get top 5
-            top_2024 = rc_2024.nlargest(5, rev_col)[[rate_col, rev_col]].copy()
-            top_2024.columns = ['Rate Code', 'Revenue']
-            top_2024['Revenue'] = top_2024['Revenue'].apply(lambda x: f"${x:,.0f}")
-            st.dataframe(top_2024, hide_index=True)
-        except Exception as e:
-            st.write("Error loading 2024 rate codes")
-    else:
-        st.write("No 2024 rate code data.")
+for i, year in enumerate([2024, 2025, 2026]):
+    with [rc1, rc2, rc3][i]:
+        st.subheader(f"Top Codes {year}")
+        if str(year) in rc_dict and not rc_dict[str(year)].empty:
+            rc_year = rc_dict[str(year)].copy()
+            if 'Room_Revenue' in rc_year.columns and 'Rate_Code' in rc_year.columns:
+                top_codes = rc_year.nlargest(5, 'Room_Revenue')[['Rate_Code', 'Room_Revenue', 'Category']]
+                top_codes['Room_Revenue'] = top_codes['Room_Revenue'].apply(lambda x: f"${x:,.0f}")
+                st.dataframe(top_codes, hide_index=True)
+            else:
+                st.write("Data format issue")
+        else:
+            st.write(f"No {year} rate code data.")
 
-with rc2:
-    st.subheader("Top Codes 2025")
-    if "2025" in rc_dict and not rc_dict["2025"].empty:
-        try:
-            rc_2025 = rc_dict["2025"].copy()
-            # Find rate code column
-            rate_col = None
-            for col in rc_2025.columns:
-                if 'Rate_Code' in col or 'RATE' in col.upper() or 'CODE' in col.upper():
-                    rate_col = col
-                    break
-            if rate_col is None:
-                rate_col = rc_2025.columns[0]
-            
-            # Find revenue column
-            rev_col = None
-            for col in rc_2025.columns:
-                if 'Revenue' in col and 'Room' in col:
-                    rev_col = col
-                    break
-            if rev_col is None:
-                for col in rc_2025.columns:
-                    if 'Revenue' in col:
-                        rev_col = col
-                        break
-            if rev_col is None:
-                rev_col = rc_2025.columns[1] if len(rc_2025.columns) > 1 else rc_2025.columns[0]
-            
-            # Ensure revenue column is numeric
-            rc_2025[rev_col] = pd.to_numeric(rc_2025[rev_col], errors='coerce').fillna(0)
-            
-            # Get top 5
-            top_2025 = rc_2025.nlargest(5, rev_col)[[rate_col, rev_col]].copy()
-            top_2025.columns = ['Rate Code', 'Revenue']
-            top_2025['Revenue'] = top_2025['Revenue'].apply(lambda x: f"${x:,.0f}")
-            st.dataframe(top_2025, hide_index=True)
-        except Exception as e:
-            st.write("Error loading 2025 rate codes")
-    else:
-        st.write("No 2025 rate code data.")
+st.caption("Note: Rate code files contain aggregated yearly data with category mapping applied.")
 
-with rc3:
-    st.subheader("Top Codes 2026")
-    if "2026" in rc_dict and not rc_dict["2026"].empty:
-        try:
-            rc_2026 = rc_dict["2026"].copy()
-            # Find rate code column
-            rate_col = None
-            for col in rc_2026.columns:
-                if 'Rate_Code' in col or 'RATE' in col.upper() or 'CODE' in col.upper():
-                    rate_col = col
-                    break
-            if rate_col is None:
-                rate_col = rc_2026.columns[0]
-            
-            # Find revenue column
-            rev_col = None
-            for col in rc_2026.columns:
-                if 'Revenue' in col and 'Room' in col:
-                    rev_col = col
-                    break
-            if rev_col is None:
-                for col in rc_2026.columns:
-                    if 'Revenue' in col:
-                        rev_col = col
-                        break
-            if rev_col is None:
-                rev_col = rc_2026.columns[1] if len(rc_2026.columns) > 1 else rc_2026.columns[0]
-            
-            # Ensure revenue column is numeric
-            rc_2026[rev_col] = pd.to_numeric(rc_2026[rev_col], errors='coerce').fillna(0)
-            
-            # Get top 5
-            top_2026 = rc_2026.nlargest(5, rev_col)[[rate_col, rev_col]].copy()
-            top_2026.columns = ['Rate Code', 'Revenue']
-            top_2026['Revenue'] = top_2026['Revenue'].apply(lambda x: f"${x:,.0f}")
-            st.dataframe(top_2026, hide_index=True)
-        except Exception as e:
-            st.write("Error loading 2026 rate codes")
-    else:
-        st.write("No 2026 rate code data.")
-
-st.caption("Note: Rate code files contain aggregated yearly data – they do not include daily dates.")
 # -----------------------------
 # 10. 2026 Reservation Activity Analysis
 # -----------------------------
@@ -630,7 +557,7 @@ else:
     st.warning("No 2026 reservation data available.")
 
 # -----------------------------
-# 11. 90-Day Predictive Pricing (with April 12-14 premium +$200)
+# 11. 90-Day Predictive Pricing
 # -----------------------------
 st.divider()
 st.header("📈 90-Day Forecast & Predictive Pricing")
@@ -737,111 +664,41 @@ if not res.empty:
         st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
 else:
     st.info("No forecast available for that exact date.")
+
 # -----------------------------
-# 14. Advanced Rate Code & Group Analysis
+# 14. Export Section
 # -----------------------------
 st.divider()
-st.header("🎯 Rate Code Strategy & Gap Identification")
+st.header("📥 Export Analysis Data")
 
-# A. Load Mapping from 'my codes.csv'
-@st.cache_data
-def get_rate_mapping():
-    mapping = {}
-    try:
-        mc = pd.read_csv("my codes.csv")
-        categories = ['Group', 'Wholesale', 'Opaque', 'Advance Purchase', 'Promotion', 'OTA Bundle Package']
-        for cat in categories:
-            if cat in mc.columns:
-                # Extract unique codes from each category column starting from row 3
-                codes = mc[cat].iloc[3:].dropna().unique()
-                for c in codes:
-                    mapping[c.strip()] = cat
-        # Include Locked/Corporate codes
-        if 'Unnamed: 30' in mc.columns:
-            locked = mc['Unnamed: 30'].iloc[3:].dropna().unique()
-            for c in locked:
-                mapping[c.strip()] = "Corporate/Locked"
-    except Exception as e:
-        st.error(f"Error loading code mapping: {e}")
-    return mapping
+col_exp1, col_exp2, col_exp3 = st.columns(3)
 
-rate_map = get_rate_mapping()
+with col_exp1:
+    if not yearly_summary.empty:
+        csv_yearly = yearly_summary.to_csv(index=False)
+        st.download_button(
+            label="📊 Download Yearly Summary",
+            data=csv_yearly,
+            file_name="yearly_performance_summary.csv",
+            mime="text/csv"
+        )
 
-# B. Process Yearly Data with Categories
-def process_rc_with_cat(year_str, df_rc):
-    if df_rc.empty: return pd.DataFrame()
-    df = df_rc.copy()
-    # Normalize column names
-    df.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in df.columns]
-    rc_col = [c for c in df.columns if 'RATE CODE' in c.upper() or 'IDS_RATE_CODE' in c.upper()][0]
-    rev_col = [c for c in df.columns if 'REVENUE' in c.upper() and '%' not in c.upper()][0]
-    
-    df = df[[rc_col, rev_col]].copy()
-    df.columns = ['Rate_Code', 'Revenue']
-    df['Revenue'] = df['Revenue'].apply(clean_numeric)
-    df['Category'] = df['Rate_Code'].map(rate_map).fillna("Other")
-    df['Year'] = year_str
-    return df
+with col_exp2:
+    if not cat_summary.empty:
+        csv_cat = cat_summary.to_csv(index=False)
+        st.download_button(
+            label="📂 Download Category Summary",
+            data=csv_cat,
+            file_name="rate_category_summary.csv",
+            mime="text/csv"
+        )
 
-# Prepare analysis data
-rc_all = []
-for y in ["2024", "2025", "2026"]:
-    if y in rc_dict:
-        processed = process_rc_with_cat(y, rc_dict[y])
-        if not processed.empty: rc_all.append(processed)
-
-if rc_all:
-    combined_rc = pd.concat(rc_all)
-    
-    # C. Category Performance Chart
-    cat_pivot = combined_rc.pivot_table(index='Category', columns='Year', values='Revenue', aggfunc='sum').fillna(0)
-    
-    fig_cat = px.bar(
-        combined_rc.groupby(['Category', 'Year'])['Revenue'].sum().reset_index(),
-        x='Category', y='Revenue', color='Year', barmode='group',
-        title="Revenue Contribution by Group (2024-2026)",
-        labels={'Revenue': 'Total Revenue ($)'},
-        color_discrete_map={"2024": "#1f77b4", "2025": "#ff7f0e", "2026": "#2ca02c"}
-    )
-    st.plotly_chart(fig_cat, use_container_width=True)
-
-    # D. Missing Code Identification (2024 vs Future)
-    rc24_data = combined_rc[combined_rc['Year'] == "2024"]
-    rc25_data = combined_rc[combined_rc['Year'] == "2025"]
-    rc26_data = combined_rc[combined_rc['Year'] == "2026"]
-    
-    missing_25 = rc24_data[~rc24_data['Rate_Code'].isin(rc25_data['Rate_Code'])].sort_values('Revenue', ascending=False)
-    missing_26 = rc24_data[~rc24_data['Rate_Code'].isin(rc26_data['Rate_Code'])].sort_values('Revenue', ascending=False)
-
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        st.subheader("⚠️ Missing 2024 Codes in 2025")
-        st.write("These codes were high earners in 2024 but disappeared in 2025:")
-        st.dataframe(missing_25[['Rate_Code', 'Category', 'Revenue']].head(8), hide_index=True)
-
-    with col_m2:
-        st.subheader("🚩 Missing 2024 Codes in 2026")
-        st.write("Lost revenue opportunities for the current year:")
-        st.dataframe(missing_26[['Rate_Code', 'Category', 'Revenue']].head(8), hide_index=True)
-
-    # E. Strategy Recommendations
-    st.markdown("""
-    ### 💡 Strategic Concentration Recommendations
-    Based on the mapping and your successful 2024 performance, focus on these areas:
-    
-    1. **The 'Promotion' Group Crisis**: 
-       - Revenue from the **Promotion** group crashed from over **$400k in 2024** to **$209k in 2025**, and is currently near zero in 2026 records. 
-       - **Action**: Reinstate high-impact codes like `SO1R`, `SOPM1M`, and `SO1EXP` immediately.
-       
-    2. **Wholesale Recovery**:
-       - There is a **$90,000 revenue gap** in Wholesale between 2024 and 2025.
-       - **Action**: Check status of `SO2BK` and `SO2R`. These were massive volume drivers in 2024 ($60k+) that are missing in recent data.
-       
-    3. **Group Business Potential**:
-       - Your 'Group' category revenue is consistently under $5,000. 
-       - **Action**: Utilize the `SGRP` series (SGRP1, SGRP2) from your rate list to target local sports teams or construction crews for base occupancy.
-       
-    4. **Corporate/Locked Segment**:
-       - Codes like `LNET2` and `LEXP2` show consistent but low volume. 
-       - **Action**: These are high-yield; ensure they are mapped correctly on your OTAs to capture business travelers who ignore standard promotions.
-    """)
+with col_exp3:
+    if not all_rc.empty:
+        csv_rc = all_rc.to_csv(index=False)
+        st.download_button(
+            label="🔑 Download All Rate Codes",
+            data=csv_rc,
+            file_name="all_rate_codes_with_categories.csv",
+            mime="text/csv"
+        )
