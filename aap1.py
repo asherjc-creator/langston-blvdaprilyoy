@@ -116,13 +116,6 @@ st.markdown("""
 [data-testid="stSidebar"] { background-color: #ffffff; }
 [data-testid="stSidebar"] .stMarkdown { text-align: center; }
 .title-container { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
-.competitor-card {
-    background: white;
-    padding: 15px;
-    border-radius: 10px;
-    margin-bottom: 10px;
-    border: 1px solid #e0e0e0;
-}
 .floor-price-banner {
     padding: 10px;
     background-color: #fff3cd;
@@ -447,7 +440,7 @@ if not comp_2026.empty:
     with c1:
         st.metric("Highest Priced Competitor", 
                   f"${comp_summary['Avg Rate'].max():.0f}",
-                  f"{comp_summary.index[0]}")
+                  comp_summary.index[0])
     with c2:
         econo_rate = comp_summary.loc['Econo Lodge Metro Arlington', 'Avg Rate']
         econo_rank = comp_summary.index.tolist().index('Econo Lodge Metro Arlington') + 1
@@ -525,37 +518,13 @@ if not df25.empty:
     monthly_avg['Month_Date'] = monthly_avg['Month'].dt.to_timestamp()
 
     fig_gap = go.Figure()
+    fig_gap.add_trace(go.Scatter(x=df25['Date'], y=df25['ADR'], name='ADR (Daily)', line=dict(color='#2ca02c', width=1), opacity=0.4))
+    fig_gap.add_trace(go.Scatter(x=df25['Date'], y=df25['RevPAR'], name='RevPAR (Daily)', line=dict(color='#d62728', width=1, dash='dot'), opacity=0.4))
+    fig_gap.add_trace(go.Scatter(x=monthly_avg['Month_Date'], y=monthly_avg['ADR'], name='ADR (Monthly Avg)', line=dict(color='#2ca02c', width=3)))
+    fig_gap.add_trace(go.Scatter(x=monthly_avg['Month_Date'], y=monthly_avg['RevPAR'], name='RevPAR (Monthly Avg)', line=dict(color='#d62728', width=3, dash='dot')))
+    fig_gap.add_trace(go.Scatter(x=df25['Date'], y=df25['ADR'] - df25['RevPAR'], fill='tozeroy', name='Gap (ADR - RevPAR)', line=dict(color='rgba(0,0,0,0)'), fillcolor='rgba(255,165,0,0.2)'))
     
-    fig_gap.add_trace(go.Scatter(
-        x=df25['Date'], y=df25['ADR'],
-        name='ADR (Daily)', line=dict(color='#2ca02c', width=1), opacity=0.4
-    ))
-    fig_gap.add_trace(go.Scatter(
-        x=df25['Date'], y=df25['RevPAR'],
-        name='RevPAR (Daily)', line=dict(color='#d62728', width=1, dash='dot'), opacity=0.4
-    ))
-    fig_gap.add_trace(go.Scatter(
-        x=monthly_avg['Month_Date'], y=monthly_avg['ADR'],
-        name='ADR (Monthly Avg)', line=dict(color='#2ca02c', width=3)
-    ))
-    fig_gap.add_trace(go.Scatter(
-        x=monthly_avg['Month_Date'], y=monthly_avg['RevPAR'],
-        name='RevPAR (Monthly Avg)', line=dict(color='#d62728', width=3, dash='dot')
-    ))
-    fig_gap.add_trace(go.Scatter(
-        x=df25['Date'], y=df25['ADR'] - df25['RevPAR'],
-        fill='tozeroy',
-        name='Gap (ADR - RevPAR)',
-        line=dict(color='rgba(0,0,0,0)'),
-        fillcolor='rgba(255,165,0,0.2)'
-    ))
-    
-    fig_gap.update_layout(
-        title="2025 ADR, RevPAR, and the Gap Between Them",
-        yaxis_title="USD",
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
+    fig_gap.update_layout(title="2025 ADR, RevPAR, and the Gap Between Them", yaxis_title="USD", hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     st.plotly_chart(fig_gap, use_container_width=True)
 
     avg_adr_25 = df25['ADR'].mean()
@@ -599,54 +568,26 @@ st.header("📊 2026 Reservation Activity Analysis")
 df26 = df[df['Date'].dt.year == 2026].sort_values('Date')
 if not df26.empty:
     fig_act = make_subplots(specs=[[{"secondary_y": True}]])
-    fig_act.add_trace(go.Bar(
-        x=df26['Date'], y=df26['Arrivals'],
-        name='Arrivals', marker_color='#1f77b4', opacity=0.7
-    ))
-    fig_act.add_trace(go.Scatter(
-        x=df26['Date'], y=df26['Occupancy']*100,
-        name='Occupancy %', line=dict(color='#d62728', width=2),
-        yaxis="y2"
-    ))
-    fig_act.update_layout(
-        title="2026 Daily Arrivals vs Occupancy",
-        xaxis_title="Date",
-        yaxis_title="Arrivals",
-        yaxis2=dict(title="Occupancy %", overlaying="y", side="right"),
-        hovermode="x unified"
-    )
+    fig_act.add_trace(go.Bar(x=df26['Date'], y=df26['Arrivals'], name='Arrivals', marker_color='#1f77b4', opacity=0.7))
+    fig_act.add_trace(go.Scatter(x=df26['Date'], y=df26['Occupancy']*100, name='Occupancy %', line=dict(color='#d62728', width=2), yaxis="y2"))
+    fig_act.update_layout(title="2026 Daily Arrivals vs Occupancy", xaxis_title="Date", yaxis_title="Arrivals", yaxis2=dict(title="Occupancy %", overlaying="y", side="right"), hovermode="x unified")
     st.plotly_chart(fig_act, use_container_width=True)
 
     df25_comp = df[df['Date'].dt.year == 2025].sort_values('Date')
     if not df25_comp.empty:
         df26['DayOfYear'] = df26['Date'].dt.dayofyear
         df25_comp['DayOfYear'] = df25_comp['Date'].dt.dayofyear
-
         cum26 = df26.groupby('DayOfYear')['Arrivals'].sum().cumsum().reset_index(name='Cumulative_Arrivals_2026')
         cum25 = df25_comp.groupby('DayOfYear')['Arrivals'].sum().cumsum().reset_index(name='Cumulative_Arrivals_2025')
-
         cum_comp = pd.merge(cum26, cum25, on='DayOfYear', how='outer').sort_values('DayOfYear')
         fig_cum = go.Figure()
-        fig_cum.add_trace(go.Scatter(
-            x=cum_comp['DayOfYear'], y=cum_comp['Cumulative_Arrivals_2026'],
-            name='2026 Cumulative Arrivals', line=dict(color='#2ca02c', width=2)
-        ))
-        fig_cum.add_trace(go.Scatter(
-            x=cum_comp['DayOfYear'], y=cum_comp['Cumulative_Arrivals_2025'],
-            name='2025 Cumulative Arrivals', line=dict(color='#ff7f0e', width=2, dash='dot')
-        ))
-        fig_cum.update_layout(
-            title="Booking Pace: Cumulative Arrivals (2026 vs 2025)",
-            xaxis_title="Day of Year",
-            yaxis_title="Cumulative Arrivals",
-            hovermode="x unified"
-        )
+        fig_cum.add_trace(go.Scatter(x=cum_comp['DayOfYear'], y=cum_comp['Cumulative_Arrivals_2026'], name='2026 Cumulative Arrivals', line=dict(color='#2ca02c', width=2)))
+        fig_cum.add_trace(go.Scatter(x=cum_comp['DayOfYear'], y=cum_comp['Cumulative_Arrivals_2025'], name='2025 Cumulative Arrivals', line=dict(color='#ff7f0e', width=2, dash='dot')))
+        fig_cum.update_layout(title="Booking Pace: Cumulative Arrivals (2026 vs 2025)", xaxis_title="Day of Year", yaxis_title="Cumulative Arrivals", hovermode="x unified")
         st.plotly_chart(fig_cum, use_container_width=True)
-
         total_arr_26 = df26['Arrivals'].sum()
         total_arr_25 = df25_comp[df25_comp['DayOfYear'] <= df26['DayOfYear'].max()]['Arrivals'].sum()
-        st.metric("Total Arrivals YTD 2026", f"{total_arr_26:.0f}",
-                  delta=f"{total_arr_26 - total_arr_25:.0f} vs 2025 same period")
+        st.metric("Total Arrivals YTD 2026", f"{total_arr_26:.0f}", delta=f"{total_arr_26 - total_arr_25:.0f} vs 2025 same period")
 
 # -----------------------------
 # 12. 90-Day Predictive Pricing
@@ -676,25 +617,12 @@ def calculate_rate(row):
 forecast_df["Suggested_Rate"] = forecast_df.apply(calculate_rate, axis=1)
 
 fig_f = go.Figure()
-fig_f.add_trace(go.Scatter(
-    x=forecast_df["Date"], y=forecast_df["Suggested_Rate"],
-    name="AI Suggested Rate", line=dict(color='#2ca02c', width=4)
-))
-fig_f.add_trace(go.Scatter(
-    x=forecast_df["Date"], y=[90] * len(forecast_df),
-    name="Floor Price ($90)", line=dict(color='red', dash='dash')
-))
+fig_f.add_trace(go.Scatter(x=forecast_df["Date"], y=forecast_df["Suggested_Rate"], name="AI Suggested Rate", line=dict(color='#2ca02c', width=4)))
+fig_f.add_trace(go.Scatter(x=forecast_df["Date"], y=[90] * len(forecast_df), name="Floor Price ($90)", line=dict(color='red', dash='dash')))
 premium_dates = forecast_df[forecast_df["Premium"] > 0]
 if not premium_dates.empty:
-    fig_f.add_trace(go.Scatter(
-        x=premium_dates["Date"], y=premium_dates["Suggested_Rate"],
-        mode='markers', name='Premium +$200 Dates',
-        marker=dict(color='gold', size=12, symbol='star')
-    ))
-fig_f.update_layout(
-    title=f"90-Day Forecast starting {forecast_start.date()} (Minimum $90 Enforcement)",
-    yaxis_title="Rate (USD)"
-)
+    fig_f.add_trace(go.Scatter(x=premium_dates["Date"], y=premium_dates["Suggested_Rate"], mode='markers', name='Premium +$200 Dates', marker=dict(color='gold', size=12, symbol='star')))
+fig_f.update_layout(title=f"90-Day Forecast starting {forecast_start.date()} (Minimum $90 Enforcement)", yaxis_title="Rate (USD)")
 st.plotly_chart(fig_f, use_container_width=True)
 
 # -----------------------------
@@ -709,27 +637,14 @@ with h1:
     pivot = forecast_df.pivot_table(index='Weekday', columns='Week', values='Suggested_Rate', aggfunc='mean')
     weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     pivot = pivot.reindex(weekday_order)
-    fig_heat = px.imshow(
-        pivot,
-        color_continuous_scale="YlOrRd",
-        title="Pricing Intensity Heatmap",
-        aspect="auto"
-    )
+    fig_heat = px.imshow(pivot, color_continuous_scale="YlOrRd", title="Pricing Intensity Heatmap", aspect="auto")
     st.plotly_chart(fig_heat, use_container_width=True)
 
 with h2:
     st.write("#### Market Demand Centers (Arlington/DC)")
     m_heat = folium.Map(location=[38.8856, -77.1664], zoom_start=12)
-    HeatMap([
-        [38.8856, -77.1664, 1.0],
-        [38.8977, -77.0365, 0.8],
-        [38.8895, -77.0353, 0.7]
-    ]).add_to(m_heat)
-    folium.Marker(
-        [38.8856, -77.1664],
-        popup="Econo Lodge Arlington",
-        icon=folium.Icon(color="blue")
-    ).add_to(m_heat)
+    HeatMap([[38.8856, -77.1664, 1.0], [38.8977, -77.0365, 0.8], [38.8895, -77.0353, 0.7]]).add_to(m_heat)
+    folium.Marker([38.8856, -77.1664], popup="Econo Lodge Arlington", icon=folium.Icon(color="blue")).add_to(m_heat)
     st_folium(m_heat, width=600, height=350)
 
 # -----------------------------
@@ -737,31 +652,36 @@ with h2:
 # -----------------------------
 st.write("---")
 st.write("### 🤖 AI Pricing Recommendation Engine")
-
-# Set the default check date to 14 days from the last data point
-check_date = st.date_input(
-    "Query a Specific Future Date:",
-    forecast_start + timedelta(days=14),
-    min_value=forecast_start.date()
-)
-
-# Convert the selected date to datetime for filtering
+check_date = st.date_input("Query a Specific Future Date:", forecast_start + timedelta(days=14), min_value=forecast_start.date())
 res = forecast_df[forecast_df["Date"] == pd.to_datetime(check_date)]
-
 if not res.empty:
     row = res.iloc[0]
-    st.metric(
-        f"Recommended ADR: {check_date}",
-        f"${row['Suggested_Rate']:.2f}",
-        delta="Enforced $90 Floor"
-    )
-    
-    # Display event warnings or success messages based on impact
+    st.metric(f"Recommended ADR: {check_date}", f"${row['Suggested_Rate']:.2f}", delta="Enforced $90 Floor")
     if row['Impact_Level'] != "None":
         st.warning(f"Event Detected: {row['Event']} ({row['Impact_Level']} Impact)")
-    
     if row['Premium'] > 0:
         st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
 else:
-    # This handles dates selected outside the 90-day forecast window
-    st.info("The selected date is outside the current 90-day predictive window. Please select a date closer to the current period.")
+    st.info("No forecast available for that exact date.")
+
+# -----------------------------
+# 15. Export Section
+# -----------------------------
+st.divider()
+st.header("📥 Export Analysis Data")
+col_exp1, col_exp2, col_exp3 = st.columns(3)
+
+with col_exp1:
+    if not yearly_summary.empty:
+        csv_yearly = yearly_summary.to_csv(index=False)
+        st.download_button(label="📊 Download Yearly Summary", data=csv_yearly, file_name="yearly_performance_summary.csv", mime="text/csv")
+
+with col_exp2:
+    if not cat_summary.empty:
+        csv_cat = cat_summary.to_csv(index=False)
+        st.download_button(label="📂 Download Category Summary", data=csv_cat, file_name="rate_category_summary.csv", mime="text/csv")
+
+with col_exp3:
+    if not all_rc.empty:
+        csv_rc = all_rc.to_csv(index=False)
+        st.download_button(label="🔑 Download All Rate Codes", data=csv_rc, file_name="all_rate_codes_with_categories.csv", mime="text/csv")
