@@ -680,4 +680,15 @@ col_exp1, col_exp2, col_exp3 = st.columns(3)
 
 with col_exp1:
     if not yearly_summary.empty:
-        csv_yearly = yearly_summary.to_csv(index
+        csv_yearly = yearly_summary.to_csv(index=False)
+        st.download_button(label="📊 Download Yearly Summary", data=csv_yearly, file_name="yearly_performance_summary.csv", mime="text/csv")
+
+with col_exp2:
+    if not cat_summary.empty:
+        csv_cat = cat_summary.to_csv(index=False)
+        st.download_button(label="📂 Download Category Summary", data=csv_cat, file_name="rate_category_summary.csv", mime="text/csv")
+
+with col_exp3:
+    if not all_rc.empty:
+        csv_rc = all_rc.to_csv(index=False)
+        st.download_button(label="🔑 Download All Rate Codes", data=csv_rc, file_name="all_rate_codes_with_categories.csv", mime="text/csv")
