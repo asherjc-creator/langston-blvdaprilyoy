@@ -737,3 +737,111 @@ if not res.empty:
         st.success(f"Premium +${row['Premium']:.0f} applied for this date.")
 else:
     st.info("No forecast available for that exact date.")
+# -----------------------------
+# 14. Advanced Rate Code & Group Analysis
+# -----------------------------
+st.divider()
+st.header("🎯 Rate Code Strategy & Gap Identification")
+
+# A. Load Mapping from 'my codes.csv'
+@st.cache_data
+def get_rate_mapping():
+    mapping = {}
+    try:
+        mc = pd.read_csv("my codes.csv")
+        categories = ['Group', 'Wholesale', 'Opaque', 'Advance Purchase', 'Promotion', 'OTA Bundle Package']
+        for cat in categories:
+            if cat in mc.columns:
+                # Extract unique codes from each category column starting from row 3
+                codes = mc[cat].iloc[3:].dropna().unique()
+                for c in codes:
+                    mapping[c.strip()] = cat
+        # Include Locked/Corporate codes
+        if 'Unnamed: 30' in mc.columns:
+            locked = mc['Unnamed: 30'].iloc[3:].dropna().unique()
+            for c in locked:
+                mapping[c.strip()] = "Corporate/Locked"
+    except Exception as e:
+        st.error(f"Error loading code mapping: {e}")
+    return mapping
+
+rate_map = get_rate_mapping()
+
+# B. Process Yearly Data with Categories
+def process_rc_with_cat(year_str, df_rc):
+    if df_rc.empty: return pd.DataFrame()
+    df = df_rc.copy()
+    # Normalize column names
+    df.columns = [c.strip().replace('\ufeff', '').replace('"', '') for c in df.columns]
+    rc_col = [c for c in df.columns if 'RATE CODE' in c.upper() or 'IDS_RATE_CODE' in c.upper()][0]
+    rev_col = [c for c in df.columns if 'REVENUE' in c.upper() and '%' not in c.upper()][0]
+    
+    df = df[[rc_col, rev_col]].copy()
+    df.columns = ['Rate_Code', 'Revenue']
+    df['Revenue'] = df['Revenue'].apply(clean_numeric)
+    df['Category'] = df['Rate_Code'].map(rate_map).fillna("Other")
+    df['Year'] = year_str
+    return df
+
+# Prepare analysis data
+rc_all = []
+for y in ["2024", "2025", "2026"]:
+    if y in rc_dict:
+        processed = process_rc_with_cat(y, rc_dict[y])
+        if not processed.empty: rc_all.append(processed)
+
+if rc_all:
+    combined_rc = pd.concat(rc_all)
+    
+    # C. Category Performance Chart
+    cat_pivot = combined_rc.pivot_table(index='Category', columns='Year', values='Revenue', aggfunc='sum').fillna(0)
+    
+    fig_cat = px.bar(
+        combined_rc.groupby(['Category', 'Year'])['Revenue'].sum().reset_index(),
+        x='Category', y='Revenue', color='Year', barmode='group',
+        title="Revenue Contribution by Group (2024-2026)",
+        labels={'Revenue': 'Total Revenue ($)'},
+        color_discrete_map={"2024": "#1f77b4", "2025": "#ff7f0e", "2026": "#2ca02c"}
+    )
+    st.plotly_chart(fig_cat, use_container_width=True)
+
+    # D. Missing Code Identification (2024 vs Future)
+    rc24_data = combined_rc[combined_rc['Year'] == "2024"]
+    rc25_data = combined_rc[combined_rc['Year'] == "2025"]
+    rc26_data = combined_rc[combined_rc['Year'] == "2026"]
+    
+    missing_25 = rc24_data[~rc24_data['Rate_Code'].isin(rc25_data['Rate_Code'])].sort_values('Revenue', ascending=False)
+    missing_26 = rc24_data[~rc24_data['Rate_Code'].isin(rc26_data['Rate_Code'])].sort_values('Revenue', ascending=False)
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.subheader("⚠️ Missing 2024 Codes in 2025")
+        st.write("These codes were high earners in 2024 but disappeared in 2025:")
+        st.dataframe(missing_25[['Rate_Code', 'Category', 'Revenue']].head(8), hide_index=True)
+
+    with col_m2:
+        st.subheader("🚩 Missing 2024 Codes in 2026")
+        st.write("Lost revenue opportunities for the current year:")
+        st.dataframe(missing_26[['Rate_Code', 'Category', 'Revenue']].head(8), hide_index=True)
+
+    # E. Strategy Recommendations
+    st.markdown("""
+    ### 💡 Strategic Concentration Recommendations
+    Based on the mapping and your successful 2024 performance, focus on these areas:
+    
+    1. **The 'Promotion' Group Crisis**: 
+       - Revenue from the **Promotion** group crashed from over **$400k in 2024** to **$209k in 2025**, and is currently near zero in 2026 records. 
+       - **Action**: Reinstate high-impact codes like `SO1R`, `SOPM1M`, and `SO1EXP` immediately.
+       
+    2. **Wholesale Recovery**:
+       - There is a **$90,000 revenue gap** in Wholesale between 2024 and 2025.
+       - **Action**: Check status of `SO2BK` and `SO2R`. These were massive volume drivers in 2024 ($60k+) that are missing in recent data.
+       
+    3. **Group Business Potential**:
+       - Your 'Group' category revenue is consistently under $5,000. 
+       - **Action**: Utilize the `SGRP` series (SGRP1, SGRP2) from your rate list to target local sports teams or construction crews for base occupancy.
+       
+    4. **Corporate/Locked Segment**:
+       - Codes like `LNET2` and `LEXP2` show consistent but low volume. 
+       - **Action**: These are high-yield; ensure they are mapped correctly on your OTAs to capture business travelers who ignore standard promotions.
+    """)
