@@ -2,7 +2,4 @@ streamlit
 pandas
 numpy
 plotly
-folium
-streamlit-folium
 Pillow
-openpyxl
